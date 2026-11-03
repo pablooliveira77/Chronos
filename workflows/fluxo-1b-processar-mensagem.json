@@ -1,0 +1,2361 @@
+[
+  {
+    "id": "ChrPrcMensagem01",
+    "name": "Chronos — Fluxo 1b: Processar mensagem",
+    "description": "Sub-workflow chamado pelo Fluxo 1 para UM update do Telegram por vez: classifica texto (tarefa/subtarefa/evento), trata botões, /hoje, /edit, /semana e /ajuda.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Fluxo 1b — Processar mensagem\n\nChamado pelo **Fluxo 1** (poller) com **um update por vez** (`kind`, `chat_id`, `text`, `args`, `callback_id`, `action`, `task_id`, `message_id`). Só depois que esta execução termina com sucesso o Fluxo 1 confirma o offset no Telegram.\n\nNós de resposta ao Telegram usam `continueRegularOutput`: uma falha ao *responder* não faz a mensagem ser reprocessada (evita tarefa duplicada).",
+          "color": 4,
+          "width": 460,
+          "height": 260
+        },
+        "id": "0f1ef2e3-3594-4ccf-82ba-eaf5fe885473",
+        "name": "Nota: processar",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -420,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "content": "## IA na criação de tarefas (Melhorias 9 + IA)\n\n**Buscar tarefas abertas** + projetos/seções → **Montar prompt** monta a árvore `P#/S#/T#` (com a Entrada) e o `idmap`; uma chamada ao DeepSeek devolve `destino` (projeto/seção/pai), `subtarefas`, `candidatos_pai`. **Interpretar** valida os ids (inventado = não informado).\n\n- pai válido → subtarefa · 2+ candidatos → botões (Util: Pendências) · pai citado que a IA não achou → busca por título (Util: buscar tarefa-pai) · nenhum → **Entrada + aviso**.\n- Depois de criar a tarefa, **Util: criar subtarefas** cria os passos (falha não derruba a execução).",
+          "color": 5,
+          "width": 520,
+          "height": 300
+        },
+        "id": "5a80d142-26c4-4f8f-8150-6e15ca480dac",
+        "name": "Nota: subtarefa",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          1940,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "e35cbad4-9250-41a2-8824-b16ff1f434cb",
+        "name": "Recebe update",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -200,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.kind }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "text"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "texto"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.kind }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "callback"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "botão"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.kind }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "cmd_resumo"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "/hoje"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.kind }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "cmd_help"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "/ajuda"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.kind }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "cmd_edit"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "/edit"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.kind }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "cmd_semana"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "/semana"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "none"
+          }
+        },
+        "id": "51df6573-161e-4f19-920e-0d50d2d06a34",
+        "name": "Tipo de update",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          0,
+          400
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.todoist.com/api/v1/projects",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "5f0c63b3-a62b-4384-b6db-edbb430deeb4",
+        "name": "Buscar projetos Todoist",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          240,
+          200
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "url": "https://api.todoist.com/api/v1/sections",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "4f3e271a-97d2-40c3-b7fa-ee1858030b08",
+        "name": "Buscar seções Todoist",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          440,
+          200
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "// Árvore Projeto › Seção › Tarefa › Subtarefa (sem IA) com ids curtos + prompt. Ordem do prompt: do mais estável ao mais volátil\n// (regras → exemplos → árvore → data/hora; a mensagem vai em role:user) para aproveitar o cache de prefixo do DeepSeek.\nconst BUDGET = 12000;      // caracteres da árvore (~3.000 tokens)\nconst TITLE_LEN = 60;\nconst squash = (v) => String(v || '').replace(/\\s+/g, ' ').trim();\nconst cut = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();\nconst STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'a', 'o', 'as', 'os', 'e', 'em', 'no', 'na', 'para', 'pra', 'com', 'um', 'uma']);\nconst words = (s) => norm(s).split(' ').filter((w) => w.length > 2 && !STOP.has(w));\n\nconst msg = $('Recebe update').first().json;\n// Agendas do Google Calendar (buscadas antes das do Todoist; se falhar, segue sem agendas)\nconst calRes = $('Google: listar agendas').first().json || {};\nconst calendars = (Array.isArray(calRes.items) ? calRes.items : [])\n  .filter((c) => !c.deleted && !c.hidden)\n  .map((c) => ({ id: c.id, name: squash(c.summaryOverride || c.summary), desc: squash(c.description), primary: !!c.primary }))\n  .filter((c) => c.name);\nconst calendarsError = calRes.error ? String(calRes.error.message || calRes.error).slice(0, 160) : null;\nconst calendarLines = calendars.length\n  ? calendars.map((c) => '- ' + c.name + (c.primary ? ' (principal)' : '') + (c.desc ? ': ' + cut(c.desc, 160) : ''))\n  : ['(nenhuma agenda disponível — use \"calendar\": null)'];\nconst rawProjects = ($('Buscar projetos Todoist').first().json.results || []).filter((p) => !p.is_archived && !p.is_deleted);\nconst rawSections = ($('Buscar seções Todoist').first().json.results || []).filter((s) => !s.is_archived && !s.is_deleted);\nlet tasksError = null;\nconst rawTasks = [];\nfor (const it of $input.all()) {\n  if (it.json.error) { tasksError = String(it.json.error.message || it.json.error).slice(0, 160); continue; }\n  for (const t of (it.json.results || [])) if (!t.checked && !t.is_deleted) rawTasks.push(t);\n}\n\nconst byOrder = (a, b) => (a.child_order || 0) - (b.child_order || 0);\nconst projects = [...rawProjects].sort((a, b) => (b.inbox_project ? 1 : 0) - (a.inbox_project ? 1 : 0) || byOrder(a, b));\nconst taskById = new Map(rawTasks.map((t) => [t.id, t]));\nconst kids = new Map();\nconst roots = [];\nfor (const t of [...rawTasks].sort(byOrder)) {\n  if (t.parent_id && taskById.has(t.parent_id)) { if (!kids.has(t.parent_id)) kids.set(t.parent_id, []); kids.get(t.parent_id).push(t); } else roots.push(t);\n}\nconst depthById = {};\nconst descendants = {};\n(function walk(list, depth) {\n  for (const t of list) { depthById[t.id] = depth; const c = kids.get(t.id) || []; walk(c, depth + 1); descendants[t.id] = c.reduce((a, k) => a + 1 + descendants[k.id], 0); }\n})(roots, 1);\n\nconst msgWords = new Set(words(msg.text));\nconst matches = (t) => words(t.content).some((w) => msgWords.has(w));\nconst keepIds = new Set(); // nível 3: só tarefas com filhos, que casam com a mensagem, e seus ancestrais\nfor (const t of rawTasks) {\n  if (kids.has(t.id) || matches(t)) { for (let x = t; x; x = x.parent_id ? taskById.get(x.parent_id) : null) keepIds.add(x.id); }\n}\n\nfunction render(level) {\n  const maxDepth = level >= 1 ? 2 : Infinity;\n  const titleLen = level >= 2 ? 35 : TITLE_LEN;\n  const onlyKept = level >= 3;\n  const idmap = { P: {}, S: {}, T: {} };\n  const lines = [];\n  let np = 0; let ns = 0; let nt = 0;\n  const pathOf = (parts) => parts.join(' › ');\n  const emitTasks = (list, indent, depth, base, pcode, scode, parentCode, omitted) => {\n    for (const t of list) {\n      if (onlyKept && !keepIds.has(t.id)) { omitted.n++; continue; }\n      const code = 'T' + (++nt);\n      const title = cut(squash(t.content), titleLen);\n      const path = base.concat(cut(squash(t.content), 40));\n      idmap.T[code] = { id: t.id, content: squash(t.content), project: pcode, section: scode, parent: parentCode, depth, path: pathOf(path) };\n      const sub = kids.get(t.id) || [];\n      const hide = depth >= maxDepth && sub.length;\n      lines.push({ kind: 'T', text: ' '.repeat(indent) + code + ' ' + title + (hide ? ' (+' + descendants[t.id] + ' subtarefas)' : '') });\n      if (!hide) emitTasks(sub, indent + 2, depth + 1, path, pcode, scode, code, omitted);\n    }\n  };\n  for (const p of projects) {\n    const pcode = 'P' + (++np);\n    const name = p.inbox_project ? 'Entrada' : squash(p.name);\n    idmap.P[pcode] = { id: p.id, name, inbox: !!p.inbox_project };\n    const desc = squash(p.description);\n    lines.push({ kind: 'P', text: pcode + ' ' + name + (p.inbox_project ? ' (inbox)' : '') + (desc ? ': ' + cut(desc, 200) : '') });\n    const omitted = { n: 0 };\n    const own = roots.filter((t) => t.project_id === p.id);\n    emitTasks(own.filter((t) => !t.section_id || !rawSections.some((s) => s.id === t.section_id)), 2, 1, [name], pcode, null, null, omitted);\n    for (const s of rawSections.filter((x) => x.project_id === p.id).sort(byOrder)) {\n      const scode = 'S' + (++ns);\n      idmap.S[scode] = { id: s.id, name: squash(s.name), project: pcode };\n      const sdesc = squash(s.description);\n      lines.push({ kind: 'S', text: '  ' + scode + ' ' + squash(s.name) + (sdesc ? ': ' + cut(sdesc, 200) : '') });\n      emitTasks(own.filter((t) => t.section_id === s.id), 4, 1, [name, squash(s.name)], pcode, scode, null, omitted);\n    }\n    if (omitted.n) lines.push({ kind: 'T', text: '  (+' + omitted.n + ' tarefas omitidas)' });\n  }\n  return { idmap, lines, tasks: nt };\n}\n\nlet level = 0;\nlet r = render(0);\nlet size = () => r.lines.map((l) => l.text).join('\\n').length;\nwhile (size() > BUDGET && level < 3) { level++; r = render(level); }\nif (size() > BUDGET) { // último recurso: corta linhas de tarefa do fim (mantém projetos e seções)\n  let total = size();\n  for (let i = r.lines.length - 1; i >= 0 && total > BUDGET; i--) {\n    if (r.lines[i].kind === 'T') { total -= r.lines[i].text.length + 1; r.lines.splice(i, 1); }\n  }\n  level = 4;\n}\nconst tree = r.lines.map((l) => l.text).join('\\n');\nconst idmap = r.idmap;\nconst tById = {};\nfor (const [code, t] of Object.entries(idmap.T)) tById[t.id] = code;\n\n// Fuso e idioma configuráveis no .env (CHRONOS_TIMEZONE / CHRONOS_LOCALE)\nconst TZ = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo';\nconst LOCALE = $env.CHRONOS_LOCALE || 'pt-BR';\nconst now = $now.setZone(TZ).setLocale(LOCALE);\nconst system = [\n  'Você é o Chronos, um assistente de produtividade pessoal. Leia a mensagem INTEIRA do usuário e responda SOMENTE com um objeto JSON válido, sem texto extra, exatamente neste formato:',\n  '{\"type\": \"evento\" | \"tarefa\", \"title\": \"string\", \"description\": \"string\", \"priority\": 1 | 2 | 3 | 4, \"due\": \"string ou null\", \"destino\": {\"projeto\": \"P#\", \"secao\": \"S# ou null\", \"pai\": \"T# ou null\"}, \"eh_subtarefa\": true | false, \"pai_citado\": \"string ou null\", \"candidatos_pai\": [\"T#\"], \"subtarefas\": [{\"title\": \"string\", \"due\": \"string ou null\"}], \"start\": \"string ou null\", \"end\": \"string ou null\", \"location\": \"string ou null\", \"calendar\": \"string ou null\"}',\n  '',\n  'Regras:',\n  '- \"type\" — decida entre \"evento\" e \"tarefa\" NESTA ordem:',\n  '  1) Intenção explícita vence: se o usuário escreveu \"tarefa\", \"Tarefa:\", \"todoist\", \"lembrete\", \"anotar\", \"criar\", \"colocar na lista\" ou pediu algo para ser feito, é \"tarefa\". Só é \"evento\" se ele escreveu \"evento\", \"compromisso\", \"agendar\" ou \"na agenda\".',\n  '  2) Horário NÃO torna algo um evento: \"entregar o relatório às 17h\" ou \"ligar para o banco 10h\" são tarefas com prazo (campo \"due\").',\n  '  3) \"evento\" SOMENTE quando a mensagem tiver uma pista clara de algo que ACONTECE em data/hora marcada: reunião, daily, call, consulta, aula, aniversário, festa, casamento, viagem, show, almoço/jantar, encontro, ou as palavras \"evento\"/\"agendar\". Sem essa pista, é \"tarefa\": uma ação a EXECUTAR ou um item a lembrar, mesmo que cite data ou hora (ex.: nome de curso, prova, certificação, entrega, ligação, conversa).',\n  '  4) Na dúvida, escolha \"tarefa\": uma tarefa sempre fica registrada no Todoist, enquanto um evento errado polui a agenda.',\n  '- \"title\": título CURTO e objetivo, com no máximo 6 palavras. Para tarefa, no imperativo (\"Comprar leite\", \"Revisar contrato X\"); para evento, o nome do compromisso (\"Dentista\", \"Reunião de planejamento\"). Nunca coloque no título data, hora, prazo, local, prioridade ou detalhes — eles vão nos outros campos.',\n  '- \"description\": vale para tarefa E para evento. Contexto útil que não coube no título (detalhes, motivo, quantidades, pessoas, referências, links), em português claro. Não repita data, hora ou local (já têm campos próprios) nem os passos que forem para \"subtarefas\". Se não houver nada além do título (ex.: \"comprar pão\"), devolva \"\" — nunca copie o título na descrição. Texto longo SEM passos distintos: título curto + descrição.',\n  '- \"priority\": 1 = urgente, 2 = alta, 3 = média, 4 = normal. Use 4 quando não houver indício de urgência.',\n  '- \"due\": o prazo mencionado, em linguagem natural em português (ex.: \"amanhã\", \"sexta às 15h\", \"dia 20\"), ou null se nenhum prazo foi citado.',\n  '',\n  'Onde a tarefa entra (use SOMENTE ids da árvore abaixo; nunca invente ids):',\n  '- \"destino.projeto\": o id P# do projeto, usando a descrição de cada projeto e seção para decidir. Se nenhum se aplicar claramente, o projeto da Entrada (inbox). \"destino.secao\": o id S# de uma seção DESSE projeto que combine claramente com a tarefa, ou null.',\n  '- \"destino.pai\": o id T# da tarefa existente da qual esta é subtarefa — SÓ com alta certeza. Itens de uma lista que já existe na árvore (ex.: um item de compra e uma tarefa \"Lista de Compras\") entram como subtarefa dela. Se não existe tarefa-pai plausível, é uma tarefa normal: \"eh_subtarefa\": false e \"pai\": null.',\n  '- Se houver DUAS OU MAIS tarefas plausíveis como pai, deixe \"pai\": null, \"eh_subtarefa\": true e liste de 2 a 5 ids em \"candidatos_pai\". Fora dessa dúvida, \"candidatos_pai\": [].',\n  '- Citação explícita (\"subtarefa de X\", \"dentro de X\", \"parte de X\", \"etapa de X\", \"na tarefa X\"): \"eh_subtarefa\": true e resolva X para um id da árvore. Se X não existir na árvore, \"pai\": null, \"candidatos_pai\": [] e \"pai_citado\" com o texto de X exatamente como o usuário escreveu. \"pai_citado\" é null quando o usuário não citou a tarefa-pai.',\n  '- \"subtarefas\": só para tarefa. Quando o texto tiver DUAS OU MAIS ações distintas e executáveis separadamente, cada passo vira {\"title\": título curto no imperativo, \"due\": prazo próprio ou null} (no máximo 10); o \"title\" principal nomeia o objetivo geral (ex.: \"Fazer a obra\") e NUNCA repete o título de uma subtarefa; a \"description\" fica só com o contexto. Sem passos distintos, \"subtarefas\": []. Se a mensagem mistura ações de assuntos diferentes (ex.: um item de compra e um recado de correio), NÃO a coloque dentro de uma lista existente: é uma tarefa nova com esses passos em \"subtarefas\". Só use um pai existente quando TODA a mensagem for item ou etapa dele.',\n  '',\n  'Campos exclusivos de evento (para tarefa, devolva null em start/end/location/calendar; para evento, \"destino.projeto\" é o projeto da Entrada, \"pai\" null, \"eh_subtarefa\" false e \"subtarefas\" []):',\n  '- \"start\": início do evento como data ABSOLUTA, calculada a partir da data e hora atual informada abaixo, no formato \"YYYY-MM-DDTHH:mm\" (ou \"YYYY-MM-DD\" se nenhum horário foi citado). null se nenhuma data foi citada. \"amanhã\", \"sexta\", \"dia 20\" devem virar a data real.',\n  '- \"end\": término do evento no mesmo formato, ou null se não foi informado (o sistema assume 1 hora de duração).',\n  '- \"location\": o local citado (endereço, sala, estabelecimento, cidade ou link), ou null.',\n  '- \"calendar\": a agenda do evento, EXATAMENTE um dos nomes da lista \"AGENDAS DO GOOGLE CALENDAR\" abaixo (use a descrição de cada agenda para decidir), ou null se nenhuma combinar claramente.',\n  '',\n  'AGENDAS DOS EXEMPLOS (fictícias, só para os exemplos abaixo): \"Trabalho\", \"Pessoal\".',\n  'ÁRVORE DOS EXEMPLOS (fictícia, só para os exemplos abaixo — a árvore real vem depois):',\n  'P1 Entrada (inbox)',\n  '  T1 Lista de Compras',\n  '  T2 Compras da obra',\n  'P2 Casa: manutenção e organização da casa',\n  '  T3 Montar estante',\n  '  S1 Festas: aniversários e confraternizações',\n  'P3 Estudos: cursos e leituras',\n  '  S2 Leitura: livros e artigos',\n  '',\n  'EXEMPLO DE ENTRADA: \"comprar leite amanhã\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Comprar leite\",\"description\":\"\",\"priority\":4,\"due\":\"amanhã\",\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":\"T1\"},\"eh_subtarefa\":true,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"ler o capítulo 5 do livro de Estatística até sexta\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Ler capítulo 5 de Estatística\",\"description\":\"\",\"priority\":3,\"due\":\"sexta\",\"destino\":{\"projeto\":\"P3\",\"secao\":\"S2\",\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"preciso organizar o aniversário do João no sábado: reservar o salão do prédio, mandar os convites no grupo da família e encomendar o bolo com a Maria (de chocolate, pra 30 pessoas)\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Organizar aniversário do João\",\"description\":\"Festa para 30 pessoas; bolo de chocolate.\",\"priority\":3,\"due\":\"sábado\",\"destino\":{\"projeto\":\"P2\",\"secao\":\"S1\",\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[{\"title\":\"Reservar o salão do prédio\",\"due\":null},{\"title\":\"Mandar os convites no grupo da família\",\"due\":null},{\"title\":\"Encomendar o bolo com a Maria\",\"due\":null}],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"Comprar parafusos, subtarefa de Montar estante\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Comprar parafusos\",\"description\":\"\",\"priority\":4,\"due\":null,\"destino\":{\"projeto\":\"P2\",\"secao\":null,\"pai\":\"T3\"},\"eh_subtarefa\":true,\"pai_citado\":\"Montar estante\",\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"Anotar as medidas, etapa de Reforma da garagem\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Anotar as medidas\",\"description\":\"\",\"priority\":4,\"due\":null,\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":true,\"pai_citado\":\"Reforma da garagem\",\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"comprar cimento\"',\n  'EXEMPLO DE SAÍDA JSON (T1 e T2 são listas de compra plausíveis): {\"type\":\"tarefa\",\"title\":\"Comprar cimento\",\"description\":\"\",\"priority\":4,\"due\":null,\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":true,\"pai_citado\":null,\"candidatos_pai\":[\"T1\",\"T2\"],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"Tarefa: ligar para o Carlos às 12h sobre o orçamento\"',\n  'EXEMPLO DE SAÍDA JSON (horário em tarefa é prazo, não evento): {\"type\":\"tarefa\",\"title\":\"Ligar para o Carlos\",\"description\":\"Assunto: orçamento.\",\"priority\":4,\"due\":\"hoje às 12h\",\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"Coloque a tarefa abaixo no Todoist\\n\\nRevisar a proposta do cliente hoje 18h\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Revisar proposta do cliente\",\"description\":\"\",\"priority\":4,\"due\":\"hoje às 18h\",\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA: \"entregar o relatório mensal às 17h\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"tarefa\",\"title\":\"Entregar relatório mensal\",\"description\":\"\",\"priority\":3,\"due\":\"hoje às 17h\",\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":null,\"end\":null,\"location\":null,\"calendar\":null}',\n  '',\n  'EXEMPLO DE ENTRADA (supondo hoje = segunda-feira, 14/09/2026): \"reunião com o time quinta às 14h na sala 3 pra fechar o cronograma do lançamento\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"evento\",\"title\":\"Reunião com o time\",\"description\":\"Fechar o cronograma do lançamento.\",\"priority\":3,\"due\":\"quinta às 14h\",\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":\"2026-09-17T14:00\",\"end\":null,\"location\":\"Sala 3\",\"calendar\":\"Trabalho\"}',\n  '',\n  'EXEMPLO DE ENTRADA (supondo hoje = segunda-feira, 14/09/2026): \"consulta no dentista segunda das 18h às 19h na clínica Sorriso\"',\n  'EXEMPLO DE SAÍDA JSON: {\"type\":\"evento\",\"title\":\"Consulta no dentista\",\"description\":\"\",\"priority\":4,\"due\":\"segunda às 18h\",\"destino\":{\"projeto\":\"P1\",\"secao\":null,\"pai\":null},\"eh_subtarefa\":false,\"pai_citado\":null,\"candidatos_pai\":[],\"subtarefas\":[],\"start\":\"2026-09-14T18:00\",\"end\":\"2026-09-14T19:00\",\"location\":\"Clínica Sorriso\",\"calendar\":\"Pessoal\"}',\n  '',\n  'AGENDAS DO GOOGLE CALENDAR (use o nome exato em \"calendar\"):',\n  ...calendarLines,\n  '',\n  'ÁRVORE REAL DO TODOIST (P# projeto, S# seção, T# tarefa aberta; filhos indentados):',\n  tree || '(vazia)',\n  '',\n  'Data e hora atual: ' + now.toFormat('cccc, dd/MM/yyyy HH:mm') + ' (' + TZ + ').',\n].join('\\n');\n\n// Intenção explícita do usuário (\"Tarefa:\", \"no Todoist\" / \"evento\", \"agendar\"): dica determinística no fim da mensagem (o system continua estável para o cache)\nconst raw = String(msg.text || '');\nconst prefixTask = /^\\s*(tarefa|task|todo|to-do)\\s*[:\\-–]/i.test(raw);\nconst prefixEvent = /^\\s*(evento|compromisso)\\s*[:\\-–]/i.test(raw);\nconst cueTask = prefixTask || /\\b(tarefa|todoist|to-?do|lembrete)\\b/i.test(raw);\nconst cueEvent = prefixEvent || /\\b(evento|compromisso|agendar|agende|na agenda|google agenda|google calendar)\\b/i.test(raw);\nconst intent = prefixTask ? 'tarefa' : prefixEvent ? 'evento' : (cueTask && !cueEvent) ? 'tarefa' : (cueEvent && !cueTask) ? 'evento' : '';\nconst hint = intent === 'tarefa' ? '\\n\\n[Dica do sistema, fora da mensagem: o usuário disse explicitamente que isto é uma TAREFA; use type \"tarefa\" mesmo que haja horário.]'\n  : intent === 'evento' ? '\\n\\n[Dica do sistema, fora da mensagem: o usuário disse explicitamente que isto é um EVENTO.]' : '';\n\nreturn [{ json: {\n  system, user: raw + hint, intent, chat_id: msg.chat_id, text: msg.text,\n  idmap, t_by_id: tById, depth_by_id: depthById,\n  tree_chars: tree.length, tree_tasks: Object.keys(idmap.T).length, tree_level: level, tasks_error: tasksError,\n  calendars, calendars_error: calendarsError,\n} }];\n"
+        },
+        "id": "2777111d-c3e6-4daf-b5e8-3435b133adca",
+        "name": "Montar prompt",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          860,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/chat/completions",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: \"deepseek-flash\", thinking: { type: \"disabled\" }, temperature: 0, max_tokens: 1200, response_format: { type: \"json_object\" }, messages: [{ role: \"system\", content: $json.system }, { role: \"user\", content: $json.user }] }) }}",
+          "options": {
+            "timeout": 60000
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+              }
+            ]
+          }
+        },
+        "id": "46675209-7966-4037-b298-685f12609915",
+        "name": "DeepSeek: classificar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1060,
+          200
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n// Fuso e idioma configuráveis no .env (CHRONOS_TIMEZONE / CHRONOS_LOCALE); o Todoist recebe só o idioma (pt-BR → pt)\nconst ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo';\nconst LOCALE = $env.CHRONOS_LOCALE || 'pt-BR';\nconst DUE_LANG = LOCALE.split('-')[0];\nconst MAX_SUBTASKS = 10; // subtarefas reais por mensagem; o excedente vai como bullets na descrição\nconst ctx = $('Montar prompt').first().json;\nconst idmap = ctx.idmap || { P: {}, S: {}, T: {} };\n\nconst u = $json.usage || {};\nconst usage = {\n  prompt_tokens: u.prompt_tokens != null ? u.prompt_tokens : null,\n  completion_tokens: u.completion_tokens != null ? u.completion_tokens : null,\n  cache_hit: u.prompt_cache_hit_tokens != null ? u.prompt_cache_hit_tokens : (u.prompt_tokens_details && u.prompt_tokens_details.cached_tokens != null ? u.prompt_tokens_details.cached_tokens : null),\n  cache_miss: u.prompt_cache_miss_tokens != null ? u.prompt_cache_miss_tokens : null,\n};\nconst base = { chat_id: ctx.chat_id, original_text: ctx.text, usage, tree: { chars: ctx.tree_chars || 0, tasks: ctx.tree_tasks || 0, level: ctx.tree_level || 0 } };\nif ($json.error) {\n  const msg = ($json.error && $json.error.message) ? String($json.error.message) : 'erro desconhecido';\n  return { json: { ...base, type: 'invalido', reason: 'DeepSeek indisponível: ' + msg.slice(0, 200) } };\n}\n\nlet raw = '';\ntry { raw = $json.choices[0].message.content || ''; } catch (e) { raw = ''; }\nlet parsed = null;\ntry { parsed = JSON.parse(raw); } catch (e) {\n  const m = raw.match(/\\{[\\s\\S]*\\}/);\n  if (m) { try { parsed = JSON.parse(m[0]); } catch (e2) { parsed = null; } }\n}\nbase.raw = raw;\n\nif (!parsed || typeof parsed !== 'object') {\n  return { json: { ...base, type: 'invalido', reason: 'DeepSeek não retornou JSON válido' } };\n}\n\nlet type = String(parsed.type || '').toLowerCase().trim();\n// Rede de segurança: se o usuário disse que é tarefa e a IA devolveu evento, vale o que o usuário disse (nada some por cair em \"evento\")\n// Evento só com pista clara de compromisso (ou pedido explícito); sem pista, um horário na mensagem é prazo de tarefa.\nconst EVENT_CUE = /(reuni|daily|\\bcall\\b|meeting|consulta|dentista|medic|doutor|psicolog|fisio|terapia|\\baula|ensaio|aniversario|festa|casamento|formatura|churrasco|viagem|\\bshow\\b|\\bjogo\\b|cinema|teatro|almoco|jantar|happy hour|encontro|palestra|workshop|webinar|entrevista|evento|agend|compromisso|sprint|planning|retrospectiva)/;\nconst noCue = !EVENT_CUE.test(String(ctx.text || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''));\nconst forcedTask = type === 'evento' && (ctx.intent === 'tarefa' || (ctx.intent !== 'evento' && noCue));\nif (forcedTask) type = 'tarefa';\nbase.intent_override = forcedTask;\nconst squashTitle = (s) => String(s || '').replace(/\\s+/g, ' ').trim();\nconst title = squashTitle(parsed.title) || squashTitle(ctx.text);\n// Descrição (Melhoria 7): vale para tarefa e evento; descarta a que só repete o título\nconst nrm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();\nlet description = String(parsed.description || '').replace(/\\r/g, '').trim();\nif (description && (nrm(description) === nrm(title) || nrm(title).includes(nrm(description)))) description = '';\nlet descHtml = description ? esc(description.length > 400 ? description.slice(0, 400) + '…' : description) : null;\nlet priority = parseInt(parsed.priority, 10);\nif (!(priority >= 1 && priority <= 4)) priority = 4;\nconst clean = (v) => (v == null || String(v).toLowerCase() === 'null') ? '' : String(v).trim();\nconst due = clean(parsed.due);\n\nconst prioLabel = { 1: '🔴 urgente', 2: '🟠 alta', 3: '🔵 média', 4: '⚪ normal' }[priority];\nconst keep = (l) => l !== null;\n\nif (type === 'evento') {\n  // ---- Google Calendar: agenda (das agendas reais buscadas em 'Montar prompt'), local e horário ----\n  const CALENDARS = (ctx.calendars || []).map((c) => c.name);\n  const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\s*(&|\\be\\b|\\band\\b)\\s*/g, ' ').replace(/[^a-z0-9]/g, '');\n  const wantedCal = clean(parsed.calendar);\n  const calendar_name = CALENDARS.find(c => norm(c) === norm(wantedCal)) || ''; // sem match → agenda principal (decidido em 'Escolher agenda')\n  const location = clean(parsed.location);\n\n  const startRaw = clean(parsed.start);\n  const endRaw = clean(parsed.end);\n  const isDateTime = (s) => /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}/.test(s);\n  const isDate = (s) => /^\\d{4}-\\d{2}-\\d{2}$/.test(s);\n\n  let event_body = null;\n  let all_day = false;\n  let when_text = due ? esc(due) : '';\n  let skip_reason = '';\n\n  if (isDateTime(startRaw)) {\n    const start = DateTime.fromISO(startRaw, { zone: ZONE });\n    let end = isDateTime(endRaw) ? DateTime.fromISO(endRaw, { zone: ZONE }) : null;\n    if (!end || !end.isValid || end <= start) end = start.plus({ hours: 1 }); // sem horário final → 1h\n    if (start.isValid) {\n      event_body = { summary: title, start: { dateTime: start.toISO(), timeZone: ZONE }, end: { dateTime: end.toISO(), timeZone: ZONE } };\n      const sameDay = start.hasSame(end, 'day');\n      when_text = start.setLocale(LOCALE).toFormat(\"ccc dd/MM/yyyy 'às' HH:mm\") + ' – ' + (sameDay ? end.toFormat('HH:mm') : end.setLocale(LOCALE).toFormat(\"ccc dd/MM/yyyy 'às' HH:mm\"));\n    } else {\n      skip_reason = 'data/hora inválida (' + startRaw + ')';\n    }\n  } else if (isDate(startRaw)) {\n    const start = DateTime.fromISO(startRaw, { zone: ZONE });\n    let end = isDate(endRaw) ? DateTime.fromISO(endRaw, { zone: ZONE }) : null;\n    if (!end || !end.isValid || end < start) end = start;\n    if (start.isValid) {\n      all_day = true;\n      event_body = { summary: title, start: { date: start.toISODate() }, end: { date: end.plus({ days: 1 }).toISODate() } }; // fim exclusivo na API\n      when_text = start.setLocale(LOCALE).toFormat('ccc dd/MM/yyyy') + (end > start ? ' – ' + end.setLocale(LOCALE).toFormat('ccc dd/MM/yyyy') : '') + ' (dia inteiro)';\n    } else {\n      skip_reason = 'data inválida (' + startRaw + ')';\n    }\n  } else {\n    skip_reason = 'não identifiquei a data do evento';\n  }\n  if (event_body) {\n    if (description) event_body.description = description;\n    if (location) event_body.location = location;\n  }\n\n  const create_event = !!event_body;\n  const summaryLines = [\n    '<b>' + esc(title) + '</b>',\n    descHtml,\n    when_text ? '🕒 ' + when_text : null,\n    location ? '📍 ' + esc(location) : null,\n    calendar_name ? '🗓 ' + esc(calendar_name) : null,\n  ];\n  const reply = [\n    '📅 <b>Evento identificado</b>',\n    '',\n    ...summaryLines,\n    '',\n    '<i>Não adicionado ao Google Calendar: ' + esc(skip_reason) + '.</i>',\n  ].filter(keep).join('\\n');\n\n  return { json: { ...base, type: 'evento', title, description, due, priority, location, calendar_name, all_day, create_event, event_body, when_text, skip_reason, reply_text: reply } };\n}\n\n\nif (type !== 'tarefa') {\n  return { json: { ...base, type: 'invalido', reason: 'type inesperado: ' + (parsed.type || '(vazio)') } };\n}\n\n// ---- Tarefa: traduz os ids curtos (P#/S#/T#) pelo idmap; id inexistente = \"não informado\" ----\nconst idOf = (v) => { const s = String(v == null ? '' : v).trim().toUpperCase(); return /^[PST]\\d+$/.test(s) ? s : ''; };\nconst dest = parsed.destino && typeof parsed.destino === 'object' ? parsed.destino : {};\nconst inboxCode = Object.keys(idmap.P).find((c) => idmap.P[c].inbox) || null;\nconst inbox = inboxCode ? idmap.P[inboxCode] : null;\n\nconst wantP = idOf(dest.projeto);\nlet pcode = idmap.P[wantP] ? wantP : inboxCode;\nconst projectInvalid = !idmap.P[wantP] && !!clean(dest.projeto) && clean(dest.projeto).toLowerCase() !== 'entrada';\nconst proj = idmap.P[pcode] || null;\nconst wantS = idOf(dest.secao);\nconst sec = proj && idmap.S[wantS] && idmap.S[wantS].project === pcode ? idmap.S[wantS] : null;\nconst sectionIgnored = !!clean(dest.secao) && !sec;\n\nconst toRef = (code) => {\n  const t = idmap.T[code];\n  const p = idmap.P[t.project];\n  return { id: t.id, content: t.content, project: p ? p.name : 'Entrada', path: t.path, depth: t.depth };\n};\nconst paiCode = idOf(dest.pai);\nconst paiGiven = !!clean(dest.pai);\nconst candCodes = [...new Set((Array.isArray(parsed.candidatos_pai) ? parsed.candidatos_pai : []).map(idOf).filter(Boolean))];\nconst validCands = candCodes.filter((c) => idmap.T[c]).slice(0, 5);\nconst cited = clean(parsed.pai_citado);\nconst intended = parsed.eh_subtarefa === true || paiGiven || (Array.isArray(parsed.candidatos_pai) && parsed.candidatos_pai.length > 0) || !!cited;\n\nlet parent_mode = 'none';\nlet parent = null;\nlet candidatos = [];\nif (idmap.T[paiCode]) { parent_mode = 'parent'; parent = toRef(paiCode); }\nelse if (validCands.length) { parent_mode = 'ask'; candidatos = validCands.map(toRef); }\nelse if (intended && cited) parent_mode = 'search';\nelse if (intended) parent_mode = 'inbox_nopai';\n\n// Subtarefas reais (máx. 10; o que passar vira bullet na descrição)\nlet subs = (Array.isArray(parsed.subtarefas) ? parsed.subtarefas : [])\n  .map((s) => (typeof s === 'string' ? { title: s, due: '' } : { title: s && s.title, due: s && s.due }))\n  .map((s) => ({ title: squashTitle(s.title).slice(0, 120), due: clean(s.due) }))\n  .filter((s) => s.title);\nsubs = subs.filter((s) => nrm(s.title) !== nrm(title)); // a IA às vezes repete o título principal como 1ª subtarefa\nconst overflow = subs.slice(MAX_SUBTASKS);\nsubs = subs.slice(0, MAX_SUBTASKS);\nif (overflow.length) description = (description ? description + '\\n' : '') + overflow.map((s) => '- ' + s.title).join('\\n');\ndescHtml = description ? esc(description.length > 400 ? description.slice(0, 400) + '…' : description) : null;\n\nconst task_body = { content: title, priority: 5 - priority, due_lang: DUE_LANG };\nif (description) task_body.description = description;\nif (due) task_body.due_string = due;\nconst inInbox = parent_mode === 'inbox_nopai';\nconst target = inInbox ? inbox : proj;\nif (parent_mode === 'parent') task_body.parent_id = parent.id;\nelse {\n  if (target && target.id) task_body.project_id = target.id;\n  if (!inInbox && sec) task_body.section_id = sec.id;\n}\n\nconst project_name = parent_mode === 'parent' ? parent.project : (target ? target.name : 'Entrada');\nconst section_name = parent_mode !== 'parent' && !inInbox && sec ? sec.name : null;\nconst where = esc(project_name) + (section_name ? ' › ' + esc(section_name) : '');\nconst notes = (projectInvalid ? ' <i>(projeto indicado não existe → Entrada)</i>' : '') + (sectionIgnored && parent_mode !== 'parent' ? ' <i>(seção indicada não existe)</i>' : '');\n\nlet heading = '✅ <b>Tarefa criada</b>';\nlet placeLine = '📁 ' + where + notes;\nlet warn = null;\nif (parent_mode === 'parent') { heading = '✅ <b>Subtarefa criada</b>'; placeLine = '📁 ' + esc(parent.project) + ' ↳ ' + esc(parent.content); }\nif (inInbox) {\n  heading = '📥 <b>Tarefa criada na Entrada</b>';\n  placeLine = null;\n  warn = cited ? 'Você citou “' + esc(cited) + '”, mas não consegui identificar qual seria a tarefa-pai.' : 'Não consegui identificar qual seria a tarefa-pai.';\n}\nconst confirm = [heading, '', '<b>' + esc(title) + '</b>', descHtml, placeLine, warn ? '<i>' + warn + '</i>' : null, '⚑ ' + prioLabel].filter(keep).join('\\n');\n\nreturn { json: {\n  ...base, type: 'tarefa', title, description, due, priority, prio_label: prioLabel,\n  parent_mode, parent, candidatos, pai_citado: cited,\n  parent_task_title: parent_mode === 'search' ? cited : '', parent_project: '',\n  project_name, project_id: target ? target.id : null, inbox_id: inbox ? inbox.id : null, section_name,\n  fallback: projectInvalid, subtarefas: subs, parent_depth: parent ? parent.depth : 0,\n  task_body, confirm_text: confirm,\n} };\n"
+        },
+        "id": "fbed37a4-2390-484e-9956-40fe71ca77f2",
+        "name": "Interpretar classificação",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1260,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.type }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "evento"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "evento"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.type }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "tarefa"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "tarefa"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "extra",
+            "renameFallbackOutput": "inválido"
+          }
+        },
+        "id": "20d894b8-519e-416d-b63e-5673664b2b4a",
+        "name": "Evento ou tarefa?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          1460,
+          200
+        ]
+      },
+      {
+        "id": "bf72d848-124c-4e49-ac53-c07bebec5c6e",
+        "name": "Criar no Google Calendar?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1680,
+          -120
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.create_event === true }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true
+        }
+      },
+      {
+        "id": "e92369bf-4a64-42dc-bb0f-9de4fcd8bd6c",
+        "name": "Google: listar agendas",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          120,
+          80
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleCalendarOAuth2Api",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "minAccessRole",
+                "value": "writer"
+              },
+              {
+                "name": "maxResults",
+                "value": "250"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "onError": "continueRegularOutput",
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "__CREDENTIAL:googleCalendarOAuth2Api__",
+            "name": "Google Calendar account"
+          }
+        },
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "id": "8d9f3c65-929a-41ae-a028-1d264d9240c5",
+        "name": "Escolher agenda",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2120,
+          -240
+        ],
+        "parameters": {
+          "jsCode": "const ev = $('Interpretar classificação').first().json;\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\s*(&|\\be\\b|\\band\\b)\\s*/g, ' ').replace(/[^a-z0-9]/g, '');\nconst wanted = norm(ev.calendar_name);\nconst listed = $('Google: listar agendas').first().json || {};\nconst agendas = Array.isArray(listed.items) ? listed.items : [];\nconst match = agendas.find(c => norm(c.summaryOverride || c.summary) === wanted) || agendas.find(c => norm(c.summary) === wanted) || null;\n\nlet calendar_note = '';\nif (!match) {\n  const why = listed.error ? 'não consegui listar as agendas (' + String(listed.error.message || listed.error).slice(0, 120) + ')' : (ev.calendar_name ? 'agenda \"' + ev.calendar_name + '\" não encontrada no Google Calendar' : 'nenhuma agenda combinou com o evento');\n  calendar_note = why + ' → usando a agenda principal';\n}\n\nreturn { json: { ...ev, calendar_id: match ? match.id : 'primary', calendar_label: match ? (match.summaryOverride || match.summary) : 'Agenda principal', calendar_note } };\n"
+        }
+      },
+      {
+        "id": "fd56fb18-5c36-4d48-ad99-92a8957564f1",
+        "name": "Google: criar evento",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2340,
+          -240
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ encodeURIComponent($json.calendar_id) }}/events",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleCalendarOAuth2Api",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.event_body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "onError": "continueErrorOutput",
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "__CREDENTIAL:googleCalendarOAuth2Api__",
+            "name": "Google Calendar account"
+          }
+        }
+      },
+      {
+        "id": "52a17895-6947-4d1a-9549-1533981c63d3",
+        "name": "Telegram: confirmar evento",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2560,
+          -320
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify((() => { const ev = $(\"Escolher agenda\").first().json; const esc = (s) => String(s == null ? \"\" : s).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\"); const lines = [\"📅 <b>Evento criado no Google Calendar</b>\", \"\", \"<b>\" + esc(ev.title) + \"</b>\", ev.description ? esc(ev.description) : null, ev.when_text ? \"🕒 \" + ev.when_text : null, ev.location ? \"📍 \" + esc(ev.location) : null, \"🗓 \" + esc(ev.calendar_label) + (ev.calendar_note ? \" <i>(\" + esc(ev.calendar_note) + \")</i>\" : \"\"), $json.htmlLink ? \"\" : null, $json.htmlLink ? \"<a href=\\\"\" + $json.htmlLink + \"\\\">Abrir no Google Calendar</a>\" : null].filter(l => l !== null); return { chat_id: ev.chat_id, text: lines.join(\"\\n\"), parse_mode: \"HTML\", disable_web_page_preview: true }; })()) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "00c951be-c01e-4b20-bf4b-818601e00945",
+        "name": "Telegram: erro no evento",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2560,
+          -140
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Escolher agenda\").first().json.chat_id, text: \"⚠️ Evento identificado (<b>\" + String($(\"Escolher agenda\").first().json.title).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\") + \"</b>), mas não consegui criá-lo no Google Calendar.\\n\" + ($json.error && $json.error.message ? String($json.error.message).slice(0, 300) : \"Erro desconhecido\"), parse_mode: \"HTML\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.reply_text, parse_mode: \"HTML\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "29ff5fab-2d57-46d0-9411-dac3c3763a9e",
+        "name": "Telegram: responder evento",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1900,
+          -40
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-buscar-tarefa__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each",
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "query": "={{ $json.parent_task_title }}",
+              "project": "={{ $json.parent_project || '' }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "query",
+                "displayName": "query",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "project",
+                "displayName": "project",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "id": "b29646a1-b7d4-46d1-9641-a1bb0519bc52",
+        "name": "Util: buscar tarefa-pai",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          1900,
+          440
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };\nconst t = $('Interpretar classificação').first().json;\nconst ctx = $('Montar prompt').first().json;\nconst ask = t.parent_mode === 'ask';\n// 'ask': a IA já listou os candidatos; 'search': resultado do Util: buscar tarefa-pai (busca por título)\nconst r = ask ? { status: 'many', candidates: t.candidatos } : ($input.first().json || {});\nconst descHtml = t.description ? esc(cut(t.description, 400)) : null;\nconst refOf = (c) => {\n  const code = (ctx.t_by_id || {})[c.id];\n  const m = code && (ctx.idmap.T || {})[code];\n  return { id: c.id, content: c.content, project: c.project, path: m ? m.path : c.project + ' › ' + c.content, depth: (ctx.depth_by_id || {})[c.id] || (m && m.depth) || 1 };\n};\n\n// Um match → subtarefa direto (o Todoist herda o projeto da tarefa-pai)\nif (r.status === 'one' && r.best) {\n  const p = refOf(r.best);\n  const body = { ...t.task_body, parent_id: p.id };\n  delete body.project_id;\n  delete body.section_id;\n  const confirm = ['✅ <b>Subtarefa criada</b>', '', '<b>' + esc(t.title) + '</b>', descHtml, '📁 ' + esc(p.project) + ' ↳ ' + esc(p.content), '⚑ ' + t.prio_label].filter((l) => l !== null).join('\\n');\n  return [{ json: { ...t, decisao: 'criar', parent_id: p.id, parent_depth: p.depth, task_body: body, confirm_text: confirm } }];\n}\n\n// Pai citado e inexistente → cria na Entrada e avisa (a pergunta com botões fica só para dúvida entre 2+ candidatos)\nif (r.status === 'none' && !r.error) {\n  const body = { ...t.task_body };\n  delete body.section_id;\n  delete body.parent_id;\n  if (t.inbox_id) body.project_id = t.inbox_id;\n  const confirm = ['📥 <b>Tarefa criada na Entrada</b>', '', '<b>' + esc(t.title) + '</b>', descHtml,\n    '<i>Você citou “' + esc(t.parent_task_title) + '”, mas não consegui identificar qual seria a tarefa-pai.</i>', '⚑ ' + t.prio_label].filter((l) => l !== null).join('\\n');\n  return [{ json: { ...t, decisao: 'criar', parent_depth: 0, task_body: body, confirm_text: confirm } }];\n}\n\n// Vários (ou falha na busca) → pergunta com botões (resolvida pelo Util: Pendências)\nconst pid = Math.random().toString(36).slice(2, 10);\nconst cands = (r.candidates || []).slice(0, 5).map(refOf);\nconst where = esc(t.project_name) + (t.section_name ? ' › ' + esc(t.section_name) : '');\nconst lines = [];\nif (r.error || !r.status) {\n  lines.push('⚠️ Não consegui procurar a tarefa-pai <b>“' + esc(t.parent_task_title) + '”</b> no Todoist.');\n} else if (ask) {\n  lines.push('🔎 Qual é a tarefa-pai de <b>' + esc(t.title) + '</b>?');\n  lines.push('Achei ' + cands.length + (cands.length === 1 ? ' tarefa que pode ser:' : ' tarefas que podem ser:'));\n  lines.push('');\n  cands.forEach((c, i) => lines.push((i + 1) + '. ' + esc(c.path)));\n} else {\n  lines.push('🔎 Qual é a tarefa-pai de <b>' + esc(t.title) + '</b>?');\n  lines.push('Procurei por <b>“' + esc(t.parent_task_title) + '”</b> e achei ' + (cands.length === 1 ? 'uma parecida' : cands.length + ' parecidas') + ':');\n  lines.push('');\n  cands.forEach((c, i) => lines.push((i + 1) + '. ' + esc(c.path)));\n}\nif (r.project_note) lines.push('<i>(' + esc(r.project_note) + ')</i>');\nlines.push('');\nlines.push('<i>Sem resposta em 30 min, crio “' + esc(t.title) + '” sem tarefa-pai (📁 ' + where + ').</i>');\n\nconst keyboard = cands.map((c, i) => [{ text: (i + 1) + '. ' + cut(c.content, 40), callback_data: 'pk:' + pid + ':' + i }]);\nkeyboard.push([\n  { text: '📥 Criar sem tarefa-pai', callback_data: 'pk:' + pid + ':in' },\n  { text: '✖️ Cancelar', callback_data: 'pk:' + pid + ':x' },\n]);\n\nconst payload = {\n  task_body: t.task_body,\n  title: t.title,\n  description: t.description,\n  prio_label: t.prio_label,\n  project_name: t.project_name,\n  section_name: t.section_name,\n  parent_query: t.parent_task_title || t.pai_citado || '',\n  candidates: cands,\n  subtarefas: t.subtarefas || [],\n};\n\nreturn [{ json: {\n  decisao: 'perguntar',\n  pid,\n  chat_id: t.chat_id,\n  payload: JSON.stringify(payload),\n  tg: { chat_id: t.chat_id, text: lines.join('\\n'), parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } },\n} }];\n"
+        },
+        "id": "5fb07978-ac49-4a94-99ae-b6143b14d6bd",
+        "name": "Decidir tarefa-pai",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2120,
+          440
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.decisao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "criar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "criar"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.decisao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "perguntar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "perguntar"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "none"
+          }
+        },
+        "id": "d8ca060d-2a89-48e8-9ad8-6d6bf1a5f765",
+        "name": "Criar ou perguntar?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          2340,
+          440
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "pid": "={{ $json.pid }}",
+              "chat_id": "={{ String($json.chat_id) }}",
+              "tipo": "subtarefa",
+              "status": "aberta",
+              "payload": "={{ $json.payload }}",
+              "criado_ms": "={{ Date.now() }}",
+              "message_id": 0
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "pid",
+                "displayName": "pid",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "chat_id",
+                "displayName": "chat_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "tipo",
+                "displayName": "tipo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "status",
+                "displayName": "status",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "payload",
+                "displayName": "payload",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "criado_ms",
+                "displayName": "criado_ms",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "message_id",
+                "displayName": "message_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          }
+        },
+        "id": "59fcfc9e-9e57-44f0-9456-fd2d3eca7898",
+        "name": "Salvar pendência",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2560,
+          560
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($(\"Decidir tarefa-pai\").first().json.tg) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "08a6ca2e-b436-41a8-90e9-00308ee7061a",
+        "name": "Telegram: perguntar tarefa-pai",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2780,
+          560
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "message_id": "={{ $json.result ? $json.result.message_id : 0 }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "message_id",
+                "displayName": "message_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "pid",
+                "condition": "eq",
+                "keyValue": "={{ $('Decidir tarefa-pai').first().json.pid }}"
+              }
+            ]
+          }
+        },
+        "id": "e5da3cd4-1563-4aad-b0d8-d5bc9060c7e5",
+        "name": "Guardar message_id",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          3000,
+          560
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "// Ponto único antes de criar a tarefa. Limite de aninhamento do Todoist: se as subtarefas passariam do último nível,\n// não são criadas — os passos viram bullets na descrição.\nconst MAX_DEPTH = 4;\nconst t = $input.first().json;\nlet subs = t.subtarefas || [];\nconst body = { ...t.task_body };\nlet nest_note = '';\nif (subs.length && (t.parent_depth || 0) + 2 > MAX_DEPTH) {\n  body.description = (body.description ? body.description + '\\n' : '') + subs.map((s) => '- ' + s.title + (s.due ? ' (' + s.due + ')' : '')).join('\\n');\n  nest_note = '<i>Os ' + subs.length + ' passos foram para a descrição (limite de níveis de subtarefa do Todoist).</i>';\n  subs = [];\n}\nreturn [{ json: { ...t, task_body: body, subtarefas: subs, nest_note } }];\n"
+        },
+        "id": "88eeecaf-4199-4e31-93c4-1ed2002242b8",
+        "name": "Preparar tarefa",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2560,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.task_body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "968398b6-3cd4-4c86-9b0a-c99a34932c3a",
+        "name": "Todoist: criar tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2780,
+          200
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ !!($json.due && $json.due.date && !String($json.due.date).includes(\"T\")) }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "f2e50419-080a-444e-a283-afffd734f6ac",
+        "name": "Tem data sem horário?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3440,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-horario-livre__"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "task_id": "={{ $json.id }}",
+              "date": "={{ $json.due.date }}",
+              "echo": "={{ $(\"Preparar tarefa\").first().json }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "task_id",
+                "displayName": "task_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "date",
+                "displayName": "date",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "echo",
+                "displayName": "echo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "object"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "4db34509-429c-4ca7-b409-2fe2d625ac19",
+        "name": "Util: horário livre (nova tarefa)",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          3660,
+          120
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.tg) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "5ad0ae69-ec2c-43b2-8645-de326a8cf6ac",
+        "name": "Telegram: confirmar tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          4100,
+          200
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Preparar tarefa\").first().json.chat_id, text: \"⚠️ Não consegui criar a tarefa no Todoist.\\n\" + ($json.error && $json.error.message ? $json.error.message : \"Erro desconhecido\"), parse_mode: \"HTML\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "df52919b-d266-4ebd-8147-00af2f43c2f5",
+        "name": "Telegram: erro ao criar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3000,
+          380
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: \"🤔 Não consegui classificar essa mensagem. Tente reformular como uma tarefa (\\\"comprar leite amanhã\\\") ou um compromisso (\\\"dentista sexta 15h\\\").\\n\\n<i>\" + ($json.reason || \"\") + \"</i>\", parse_mode: \"HTML\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "ace7a4da-7873-4732-91ec-4f834d0a195e",
+        "name": "Telegram: não entendi",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1680,
+          40
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.action }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "done"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "concluir"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.action }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "today"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "hoje"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.action }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "snooze"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "amanhã"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.action }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "pk"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "pendência"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "none"
+          }
+        },
+        "id": "46dfa5eb-9554-4460-b3b5-652fa6b14298",
+        "name": "Ação do botão",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          240,
+          800
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $json.task_id }}/close",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "6061c64e-9b6f-445d-bd11-429f8f0448d3",
+        "name": "Todoist: concluir tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          480,
+          680
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.echo ? { callback_query_id: $json.echo.callback_id, show_alert: !$json.ok, text: ($json.ok ? ($json.echo.action === \"today\" ? \"📅 Hoje\" : \"⏰ Amanhã\") + ($json.time ? \" às \" + $json.time : \"\") + \" — \" + ($json.content || \"\") + ($json.reason ? \" (\" + $json.reason + \")\" : \"\") : \"⚠️ \" + ($json.reason || \"falha ao reagendar\")).slice(0, 200) } : { callback_query_id: $(\"Recebe update\").first().json.callback_id, text: \"✅ Tarefa concluída!\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "22addcfc-dd4d-4900-a0d7-fff192d185c7",
+        "name": "Telegram: confirmar ação",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          740,
+          760
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ callback_query_id: $(\"Recebe update\").first().json.callback_id, text: \"⚠️ Falha no Todoist: \" + ($json.error && $json.error.message ? $json.error.message : \"erro desconhecido\"), show_alert: true }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "4a9f438b-730f-47af-8b99-d601dabd5a11",
+        "name": "Telegram: falha na ação",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          960,
+          600
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-horario-livre__"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "task_id": "={{ $json.task_id }}",
+              "date": "={{ $now.setZone($env.CHRONOS_TIMEZONE || \"America/Sao_Paulo\").toFormat(\"yyyy-MM-dd\") }}",
+              "echo": "={{ { callback_id: $json.callback_id, action: $json.action, chat_id: $json.chat_id } }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "task_id",
+                "displayName": "task_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "date",
+                "displayName": "date",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "echo",
+                "displayName": "echo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "object"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "af4312c5-bd97-47f1-9ca8-7ce989a8a6b6",
+        "name": "Util: mover para hoje",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          480,
+          840
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-horario-livre__"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "task_id": "={{ $json.task_id }}",
+              "date": "={{ $now.setZone($env.CHRONOS_TIMEZONE || \"America/Sao_Paulo\").plus({ days: 1 }).toFormat(\"yyyy-MM-dd\") }}",
+              "echo": "={{ { callback_id: $json.callback_id, action: $json.action, chat_id: $json.chat_id } }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "task_id",
+                "displayName": "task_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "date",
+                "displayName": "date",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "echo",
+                "displayName": "echo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "object"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "ca724c37-85bc-4aa1-aa29-18b0e24fc77b",
+        "name": "Util: mover para amanhã",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          480,
+          1000
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-pendencias__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "f440f134-24b2-400d-9d26-af5b8460e68b",
+        "name": "Util: resolver pendência",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          480,
+          1160
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:fluxo-2-rotina-9h20__"
+          },
+          "options": {
+            "waitForSubWorkflow": false
+          }
+        },
+        "id": "40d17b4a-1a93-4675-a4d1-692cc84102c2",
+        "name": "Fluxo 2: enviar resumo agora",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          1320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: \"👋 Sou o Chronos.\\n\\nMe mande uma <b>tarefa</b> (\\\"comprar leite amanhã\\\", \\\"ler capítulo 5 até sexta\\\") ou um <b>compromisso</b> (\\\"dentista sexta 15h\\\") que eu organizo — tarefas no Todoist (projeto, seção, prioridade, prazo e horário livre) e compromissos no Google Calendar.\\n\\n<b>Subtarefa</b>: \\\"comprar parafusos, subtarefa de Montar estante\\\"\\n\\n<b>Comandos</b>\\n/hoje — envia o resumo do dia agora\\n/edit &lt;tarefa&gt; | &lt;o que mudar&gt; — edita uma tarefa (ex.: /edit Montar estante | mudar prazo pra sexta)\\n/semana — agenda da semana\\n/ajuda — esta mensagem\\n\\nSeu chat_id: <code>\" + $json.chat_id + \"</code> (vai em TELEGRAM_CHAT_ID no .env)\", parse_mode: \"HTML\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "9991e692-23d7-4dd8-9ae4-b2f1131adced",
+        "name": "Telegram: ajuda e chat_id",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          240,
+          1480
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:fluxo-3-editar-tarefa__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "e3c498e8-07f3-4c3c-93bd-7f2f945a1125",
+        "name": "Fluxo 3: editar tarefa",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          1640
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:fluxo-4-agenda-semanal__"
+          },
+          "options": {
+            "waitForSubWorkflow": false
+          }
+        },
+        "id": "6c9e2dc6-f3ea-4f46-ae33-1d0e9a5ce610",
+        "name": "Fluxo 4: agenda agora",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          240,
+          1800
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000,
+            "pagination": {
+              "pagination": {
+                "paginationMode": "updateAParameterInEachRequest",
+                "parameters": {
+                  "parameters": [
+                    {
+                      "type": "qs",
+                      "name": "cursor",
+                      "value": "={{ $response.body.next_cursor }}"
+                    }
+                  ]
+                },
+                "paginationCompleteWhen": "other",
+                "completeExpression": "={{ !$response.body.next_cursor }}",
+                "limitPagesFetched": true,
+                "maxRequests": 20
+              }
+            }
+          }
+        },
+        "id": "a65fb2e4-13ec-4c00-bafe-4145e5119c65",
+        "name": "Buscar tarefas abertas Todoist",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          640,
+          200
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000,
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.parent_mode }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "search"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "buscar"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.parent_mode }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "ask"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "perguntar"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "extra",
+            "renameFallbackOutput": "sem busca"
+          }
+        },
+        "id": "7f5ce252-be98-4723-b32d-9d59cf5fa6e8",
+        "name": "Como achar o pai?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          1680,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-criar-subtarefas__"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "parent_id": "={{ $json.id }}",
+              "priority": "={{ $('Preparar tarefa').first().json.task_body.priority }}",
+              "subs_json": "={{ JSON.stringify($('Preparar tarefa').first().json.subtarefas || []) }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "parent_id",
+                "displayName": "parent_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "priority",
+                "displayName": "priority",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "number"
+              },
+              {
+                "id": "subs_json",
+                "displayName": "subs_json",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "e4b1b9d8-7a35-431a-88ff-455b167b3c90",
+        "name": "Util: criar subtarefas",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          3000,
+          200
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Devolve a resposta do Todoist (o Util de subtarefas troca o item).\nreturn [{ json: $('Todoist: criar tarefa').first().json }];\n"
+        },
+        "id": "b5ed61d7-0655-4290-96db-8b50c8e98969",
+        "name": "Tarefa criada",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3220,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Monta a confirmação final: texto da decisão + vencimento (📅/⏰) + subtarefas + avisos.\nconst prep = $('Preparar tarefa').first().json;\nconst created = $('Todoist: criar tarefa').first().json;\nconst tryJson = (name) => { try { return $(name).first().json; } catch (e) { return null; } };\nconst slot = tryJson('Util: horário livre (nova tarefa)');\nconst subs = tryJson('Util: criar subtarefas');\n\nlet dueLine = '';\nif (slot && slot.task_id && slot.date) {\n  dueLine = '\\n📅 ' + slot.date + (slot.time ? ' ⏰ ' + slot.time : '') + (slot.reason ? ' <i>(' + slot.reason + ')</i>' : '');\n} else if (created.due && created.due.date) {\n  const d = String(created.due.date);\n  dueLine = '\\n📅 ' + (d.includes('T') ? DateTime.fromISO(d, { zone: $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd ⏰ HH:mm') : d);\n}\nconst extra = [subs && subs.lines ? subs.lines : '', prep.nest_note || ''].filter(Boolean).join('\\n');\nreturn [{ json: { tg: { chat_id: prep.chat_id, text: prep.confirm_text + dueLine + (extra ? '\\n' + extra : ''), parse_mode: 'HTML' } } }];\n"
+        },
+        "id": "595fc94b-0073-4b53-936a-bc60f9f5b288",
+        "name": "Montar confirmação",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3880,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_uso__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "ts": "={{ DateTime.now().setZone($env.CHRONOS_TIMEZONE || 'America/Sao_Paulo').toISO() }}",
+              "ts_ms": "={{ Date.now() }}",
+              "tipo": "={{ $json.type }}",
+              "prompt_tokens": "={{ $json.usage.prompt_tokens ?? 0 }}",
+              "completion_tokens": "={{ $json.usage.completion_tokens ?? 0 }}",
+              "cache_hit": "={{ $json.usage.cache_hit ?? 0 }}",
+              "cache_miss": "={{ $json.usage.cache_miss ?? 0 }}",
+              "tree_chars": "={{ $json.tree.chars }}",
+              "tree_tasks": "={{ $json.tree.tasks }}",
+              "tree_level": "={{ $json.tree.level }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "ts",
+                "displayName": "ts",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ts_ms",
+                "displayName": "ts_ms",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "tipo",
+                "displayName": "tipo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "prompt_tokens",
+                "displayName": "prompt_tokens",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "completion_tokens",
+                "displayName": "completion_tokens",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "cache_hit",
+                "displayName": "cache_hit",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "cache_miss",
+                "displayName": "cache_miss",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "tree_chars",
+                "displayName": "tree_chars",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "tree_tasks",
+                "displayName": "tree_tasks",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "tree_level",
+                "displayName": "tree_level",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          }
+        },
+        "id": "f4088b0b-db4a-44b5-b8f5-f8142b4f083e",
+        "name": "Registrar uso",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1480,
+          360
+        ],
+        "onError": "continueRegularOutput",
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_uso__"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "ts_ms",
+                "condition": "lt",
+                "keyValue": "={{ Date.now() - 30 * 24 * 60 * 60 * 1000 }}"
+              }
+            ]
+          }
+        },
+        "id": "7741a678-e472-4be0-81f7-5fd4d2ea344d",
+        "name": "Limpar uso antigo",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1700,
+          360
+        ],
+        "onError": "continueRegularOutput",
+        "alwaysOutputData": true
+      }
+    ],
+    "connections": {
+      "Recebe update": {
+        "main": [
+          [
+            {
+              "node": "Tipo de update",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tipo de update": {
+        "main": [
+          [
+            {
+              "node": "Google: listar agendas",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Ação do botão",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Fluxo 2: enviar resumo agora",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: ajuda e chat_id",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Fluxo 3: editar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Fluxo 4: agenda agora",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar projetos Todoist": {
+        "main": [
+          [
+            {
+              "node": "Buscar seções Todoist",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar seções Todoist": {
+        "main": [
+          [
+            {
+              "node": "Buscar tarefas abertas Todoist",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar prompt": {
+        "main": [
+          [
+            {
+              "node": "DeepSeek: classificar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DeepSeek: classificar": {
+        "main": [
+          [
+            {
+              "node": "Interpretar classificação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Interpretar classificação": {
+        "main": [
+          [
+            {
+              "node": "Registrar uso",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Evento ou tarefa?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Evento ou tarefa?": {
+        "main": [
+          [
+            {
+              "node": "Criar no Google Calendar?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Como achar o pai?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: não entendi",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Criar no Google Calendar?": {
+        "main": [
+          [
+            {
+              "node": "Escolher agenda",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: responder evento",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google: listar agendas": {
+        "main": [
+          [
+            {
+              "node": "Buscar projetos Todoist",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Escolher agenda": {
+        "main": [
+          [
+            {
+              "node": "Google: criar evento",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google: criar evento": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar evento",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: erro no evento",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: buscar tarefa-pai": {
+        "main": [
+          [
+            {
+              "node": "Decidir tarefa-pai",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decidir tarefa-pai": {
+        "main": [
+          [
+            {
+              "node": "Criar ou perguntar?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Criar ou perguntar?": {
+        "main": [
+          [
+            {
+              "node": "Preparar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Salvar pendência",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Salvar pendência": {
+        "main": [
+          [
+            {
+              "node": "Telegram: perguntar tarefa-pai",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram: perguntar tarefa-pai": {
+        "main": [
+          [
+            {
+              "node": "Guardar message_id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar tarefa": {
+        "main": [
+          [
+            {
+              "node": "Todoist: criar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: criar tarefa": {
+        "main": [
+          [
+            {
+              "node": "Util: criar subtarefas",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: erro ao criar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tem data sem horário?": {
+        "main": [
+          [
+            {
+              "node": "Util: horário livre (nova tarefa)",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Montar confirmação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: horário livre (nova tarefa)": {
+        "main": [
+          [
+            {
+              "node": "Montar confirmação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ação do botão": {
+        "main": [
+          [
+            {
+              "node": "Todoist: concluir tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Util: mover para hoje",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Util: mover para amanhã",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Util: resolver pendência",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: concluir tarefa": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar ação",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: falha na ação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: mover para hoje": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar ação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: mover para amanhã": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar ação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar tarefas abertas Todoist": {
+        "main": [
+          [
+            {
+              "node": "Montar prompt",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Registrar uso": {
+        "main": [
+          [
+            {
+              "node": "Limpar uso antigo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Como achar o pai?": {
+        "main": [
+          [
+            {
+              "node": "Util: buscar tarefa-pai",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Decidir tarefa-pai",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Preparar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: criar subtarefas": {
+        "main": [
+          [
+            {
+              "node": "Tarefa criada",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tarefa criada": {
+        "main": [
+          [
+            {
+              "node": "Tem data sem horário?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar confirmação": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

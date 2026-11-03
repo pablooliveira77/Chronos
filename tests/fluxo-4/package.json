@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "description": "Testes offline da lógica (nós Code) dos Fluxos 2, 3 e 4 e dos utilitários",
+  "scripts": { "test": "node --test" },
+  "devDependencies": { "luxon": "3.5.0" }
+}

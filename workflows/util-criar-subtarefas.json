@@ -1,0 +1,208 @@
+[
+  {
+    "id": "ChrUtilSubtarefa01",
+    "name": "Chronos — Util: Criar subtarefas",
+    "description": "Cria, em ordem, as subtarefas de uma tarefa já criada (POST /tasks com parent_id). Falha em uma subtarefa não derruba a execução: o resumo informa quantas foram criadas e quais falharam.",
+    "active": false,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Util: Criar subtarefas\n\nEntrada: `parent_id` (tarefa já criada), `priority` (valor da API: 4 = urgente, herdada da tarefa-mãe) e `subs_json` (`[{title, due}]`).\n\nUma chamada `POST /tasks` por subtarefa, em ordem. **Nenhum erro derruba a execução** (o Fluxo 1 reprocessaria a mensagem e duplicaria a tarefa-mãe): o resultado traz `created`, `failed` e `lines` (texto HTML para a confirmação).",
+          "color": 4,
+          "width": 460,
+          "height": 200
+        },
+        "id": "27a1443a-a17c-4dc8-8402-0fac6e6fe8a3",
+        "name": "Nota: subtarefas",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -40,
+          -260
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "workflowInputs",
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "parent_id",
+                "type": "string"
+              },
+              {
+                "name": "priority",
+                "type": "number"
+              },
+              {
+                "name": "subs_json",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "id": "3c3d3eec-ffb3-4656-9d15-b45186176443",
+        "name": "Entrada",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const i = $('Entrada').first().json;\nconst DUE_LANG = ($env.CHRONOS_LOCALE || 'pt-BR').split('-')[0]; // idioma dos prazos no Todoist, da locale do .env (pt-BR → pt)\nlet subs = [];\ntry { subs = JSON.parse(i.subs_json || '[]'); } catch (e) { subs = []; }\nif (!i.parent_id || !Array.isArray(subs) || !subs.length) return [{ json: { skip: true } }];\nreturn subs.map((s) => ({ json: { skip: false, title: s.title, body: { content: s.title, parent_id: String(i.parent_id), priority: Number(i.priority) || 1, due_lang: DUE_LANG, ...(s.due ? { due_string: s.due } : {}) } } }));\n"
+        },
+        "id": "c2c5b34c-8d5b-4f66-b086-bf8134405120",
+        "name": "Preparar subtarefas",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ !$json.skip }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "8863d6e3-66b5-4d4b-b224-9e70d66a4d2b",
+        "name": "Tem subtarefas?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          440,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "72bfadc6-2020-41c5-a847-ee2db9af4e3b",
+        "name": "Todoist: criar subtarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          660,
+          100
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst prep = $('Preparar subtarefas').all().map((i) => i.json);\nif (!prep.length || prep[0].skip) return [{ json: { total: 0, created: 0, failed: 0, lines: '' } }];\nconst res = $input.all().map((i) => i.json);\nconst ok = [];\nconst bad = [];\nprep.forEach((p, i) => {\n  const r = res[i] || {};\n  if (r.id) ok.push(p.title);\n  else {\n    const raw = String((r.error && (r.error.message || r.error)) || r.message || 'erro desconhecido');\n    const code = raw.match(/^\\s*(\\d{3})\\b/);\n    bad.push({ title: p.title, why: code ? 'erro ' + code[1] + ' do Todoist' : raw.slice(0, 80) });\n  }\n});\nconst lines = [];\nif (ok.length) lines.push('↳ ' + ok.length + (ok.length === 1 ? ' subtarefa: ' : ' subtarefas: ') + ok.slice(0, 5).map(esc).join(' · ') + (ok.length > 5 ? ' · +' + (ok.length - 5) : ''));\nif (bad.length) lines.push('⚠️ ' + bad.length + ' de ' + prep.length + (bad.length === 1 ? ' subtarefa não foi criada: ' : ' subtarefas não foram criadas: ') + bad.slice(0, 5).map((b) => esc(b.title)).join(', ') + ' <i>(' + esc(bad[0].why) + ')</i>');\nreturn [{ json: { total: prep.length, created: ok.length, failed: bad.length, lines: lines.join('\\n') } }];\n"
+        },
+        "id": "be63922b-f1e2-41f8-ab19-9f3df01e90cf",
+        "name": "Resumir",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          200
+        ]
+      }
+    ],
+    "connections": {
+      "Entrada": {
+        "main": [
+          [
+            {
+              "node": "Preparar subtarefas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar subtarefas": {
+        "main": [
+          [
+            {
+              "node": "Tem subtarefas?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tem subtarefas?": {
+        "main": [
+          [
+            {
+              "node": "Todoist: criar subtarefa",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Resumir",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: criar subtarefa": {
+        "main": [
+          [
+            {
+              "node": "Resumir",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

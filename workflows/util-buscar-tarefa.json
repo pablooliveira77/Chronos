@@ -1,0 +1,206 @@
+[
+  {
+    "id": "ChrUtilBuscaTf01",
+    "name": "Chronos — Util: Buscar tarefa",
+    "description": "Sub-workflow: procura uma tarefa aberta do Todoist pelo nome (inclui subtarefas), opcionalmente dentro de um projeto, e devolve status one/many/none + candidatos. Usado pela subtarefa (M9) e pelo /edit (M2).",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Util: Buscar tarefa\n\nEntrada: `query` (nome) e `project` (opcional). Lê **todas** as tarefas abertas (paginando `next_cursor`, inclui subtarefas) e pontua cada uma:\n\n- **100** nome igual (sem acento/pontuação/caixa)\n- **90** mesmas palavras, fora artigos/preposições\n- **80** um nome contém o outro\n- **35–70** palavras em comum (Jaccard ≥ 0,5)\n\nSaída `status`: **one** (1 igual, ou nenhum igual e 1 que contém), **many** (até 5 candidatos para perguntar) ou **none**.",
+          "color": 4,
+          "width": 460,
+          "height": 300
+        },
+        "id": "9d092398-302b-4cfd-bc5f-4ce9728ba51a",
+        "name": "Nota: buscar",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -40,
+          -220
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "workflowInputs",
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "query",
+                "type": "string"
+              },
+              {
+                "name": "project",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "id": "01137f01-35b0-4d35-9bd2-f3d0d138c1c2",
+        "name": "Entrada",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://api.todoist.com/api/v1/projects",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "5013f4d0-e799-4b00-85e9-ff5d86b2ec69",
+        "name": "Buscar projetos",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          220,
+          200
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000,
+            "pagination": {
+              "pagination": {
+                "paginationMode": "updateAParameterInEachRequest",
+                "parameters": {
+                  "parameters": [
+                    {
+                      "type": "qs",
+                      "name": "cursor",
+                      "value": "={{ $response.body.next_cursor }}"
+                    }
+                  ]
+                },
+                "paginationCompleteWhen": "other",
+                "completeExpression": "={{ !$response.body.next_cursor }}",
+                "limitPagesFetched": true,
+                "maxRequests": 20
+              }
+            }
+          }
+        },
+        "id": "aaf305d9-164f-46c0-ab13-9361fd1e37fb",
+        "name": "Buscar tarefas abertas",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          440,
+          200
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "const input = $('Entrada').first().json;\nconst query = String(input.query || '').trim();\nconst projFilter = String(input.project || '').trim();\n\nconst STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'a', 'o', 'as', 'os', 'e', 'em', 'no', 'na', 'nos', 'nas', 'para', 'pra', 'com', 'um', 'uma']);\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();\nconst tokens = (s) => norm(s).split(' ').filter(w => w.length > 1 && !STOP.has(w));\n\nconst projects = {};\nfor (const p of ($('Buscar projetos').first().json.results || [])) projects[p.id] = p.inbox_project ? 'Entrada' : p.name;\n\nconst tasks = [];\nfor (const it of $input.all()) for (const t of (it.json.results || [])) tasks.push(t);\nconst byId = {};\nfor (const t of tasks) byId[t.id] = t;\n\nlet pool = tasks.filter(t => !t.checked && !t.is_deleted);\nlet project_note = '';\nif (projFilter) {\n  const nf = norm(projFilter);\n  let ids = Object.keys(projects).filter(id => norm(projects[id]) === nf);\n  if (!ids.length) ids = Object.keys(projects).filter(id => { const np = norm(projects[id]); return np && (np.includes(nf) || nf.includes(np)); });\n  if (ids.length) pool = pool.filter(t => ids.includes(t.project_id));\n  else project_note = 'projeto \"' + projFilter + '\" não existe; procurei em todos';\n}\n\nconst nq = norm(query);\nconst tq = tokens(query);\nconst scored = [];\nfor (const t of pool) {\n  const nt = norm(t.content);\n  if (!nt || !nq) continue;\n  let score = 0;\n  if (nt === nq) score = 100;\n  else if ((nt.includes(nq) && nq.length >= 3) || (nq.includes(nt) && nt.length >= 3)) score = 80;\n  else {\n    const tt = tokens(t.content);\n    if (tq.length && tt.length) {\n      const inter = tq.filter(x => tt.includes(x)).length;\n      const j = inter / new Set([...tq, ...tt]).size;\n      if (j === 1) score = 90; // mesmas palavras, fora artigos/preposições\n      else if (j >= 0.5) score = Math.round(j * 70);\n    }\n  }\n  if (score > 0) scored.push({ score, t });\n}\nscored.sort((a, b) => (b.score - a.score) || (Math.abs(a.t.content.length - query.length) - Math.abs(b.t.content.length - query.length)));\n\nconst view = ({ t, score }) => ({\n  id: t.id,\n  content: t.content,\n  description: t.description || '',\n  project: projects[t.project_id] || '?',\n  project_id: t.project_id,\n  section_id: t.section_id || null,\n  parent_id: t.parent_id || null,\n  parent_content: t.parent_id && byId[t.parent_id] ? byId[t.parent_id].content : null,\n  priority: t.priority,\n  due: t.due || null,\n  score,\n});\n\nconst exact = scored.filter(s => s.score === 100);\nconst strong = scored.filter(s => s.score >= 80);\nlet status = 'none';\nlet best = null;\nlet candidates = [];\nif (exact.length === 1) { status = 'one'; best = view(exact[0]); }\nelse if (exact.length > 1) { status = 'many'; candidates = exact.slice(0, 5).map(view); }\nelse if (strong.length === 1) { status = 'one'; best = view(strong[0]); }\nelse if (strong.length > 1) { status = 'many'; candidates = strong.slice(0, 5).map(view); }\nelse if (scored.length) { status = 'many'; candidates = scored.slice(0, 5).map(view); }\n\nreturn [{ json: { status, query, project_filter: projFilter, project_note, best, candidates: best ? [best] : candidates, total_open: pool.length } }];\n"
+        },
+        "id": "f4d3e827-7aff-44d1-8e46-15fbb7cf175b",
+        "name": "Casar nome",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          660,
+          200
+        ]
+      }
+    ],
+    "connections": {
+      "Entrada": {
+        "main": [
+          [
+            {
+              "node": "Buscar projetos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar projetos": {
+        "main": [
+          [
+            {
+              "node": "Buscar tarefas abertas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar tarefas abertas": {
+        "main": [
+          [
+            {
+              "node": "Casar nome",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

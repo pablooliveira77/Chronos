@@ -1,0 +1,426 @@
+[
+  {
+    "id": "ChrFluxo4Metr001",
+    "name": "Chronos — Fluxo 4: Agenda da semana",
+    "description": "Toda segunda às 9h30 (ou /semana): agenda da semana atual do Google Calendar (seg 00:00 → seg seguinte 00:00), agrupada por dia, com divisão em mensagens quando passa do limite do Telegram (DeepSeek só escolhe os pontos de corte).",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Fluxo 4 — Agenda da semana (Melhoria Agenda Semanal)\n\nSegunda 9h30 (ou `/semana`, qualquer dia): eventos do Google Calendar da **semana atual** (segunda 00:00 → segunda seguinte 00:00, no fuso de `CHRONOS_TIMEZONE`), agrupados por dia. Substitui o antigo relatório de métricas (sem Todoist).\n\n- **Período** aceita `ref_date` (AAAA-MM-DD) no item de entrada para simular outra semana.\n- Dia inteiro: `end` é exclusivo. Multi-dia: linha completa no 1º dia visível, `↳` nos demais.\n- Passou de ~3800 caracteres → o DeepSeek só escolhe em que dias cortar; o código monta e valida (senão, divisão determinística).\n- Cancelados e recusados ficam de fora; recorrentes levam 🔁.",
+          "color": 4,
+          "width": 520,
+          "height": 300
+        },
+        "id": "b3ec1726-661d-429f-b6b9-f56549b86ffc",
+        "name": "Nota: agenda da semana",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -40,
+          -300
+        ]
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "weeks",
+                "weeksInterval": 1,
+                "triggerAtDay": [
+                  1
+                ],
+                "triggerAtHour": 9,
+                "triggerAtMinute": 30
+              }
+            ]
+          }
+        },
+        "id": "534f45d8-8979-4d27-9d9c-5dbe10af5ae2",
+        "name": "Segunda às 9h30",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.4,
+        "position": [
+          0,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "c7db4621-92f9-4828-bab7-516aeb731333",
+        "name": "Chamado por /semana",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          480
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Janela da semana atual (seg 00:00 → seg seguinte 00:00, exclusivo). `ref_date` (AAAA-MM-DD) permite simular outro dia.\nconst ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo'; // configurável no .env (CHRONOS_TIMEZONE)\nconst ref = String(($json && $json.ref_date) || '').slice(0, 10);\nconst refDt = /^\\d{4}-\\d{2}-\\d{2}$/.test(ref) ? DateTime.fromISO(ref, { zone: ZONE }) : null;\nconst now = refDt && refDt.isValid ? refDt : $now.setZone(ZONE);\nconst start = now.startOf('week');\nconst end = start.plus({ weeks: 1 });\nconst last = end.minus({ days: 1 });\nreturn [{ json: {\n  start: start.toISO(), end: end.toISO(),\n  start_date: start.toISODate(), last_date: last.toISODate(),\n  label: start.toFormat('dd/MM') + ' – ' + last.toFormat('dd/MM'),\n} }];\n"
+        },
+        "id": "f712f894-b7f7-4e3c-8c7d-ca9f29612592",
+        "name": "Período",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "minAccessRole",
+                "value": "writer"
+              },
+              {
+                "name": "maxResults",
+                "value": "250"
+              }
+            ]
+          },
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleCalendarOAuth2Api",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "7b582b64-c1e1-4d99-bf4c-ee8a7bb93650",
+        "name": "Google: listar agendas",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          440,
+          380
+        ],
+        "onError": "continueRegularOutput",
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "__CREDENTIAL:googleCalendarOAuth2Api__",
+            "name": "Google Calendar account"
+          }
+        },
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "// Opcional: CHRONOS_CALENDARS=\"Agenda A;Agenda B\" restringe as agendas consultadas; vazio = todas as que você pode editar.\nconst WANTED = String($env.CHRONOS_CALENDARS || '').split(';').map((s) => s.trim()).filter(Boolean);\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\s*(&|\\be\\b|\\band\\b)\\s*/g, ' ').replace(/[^a-z0-9]/g, '');\nconst res = $json;\nconst fallback = (why) => [{ json: { calendar_id: 'primary', calendar_label: 'Agenda principal', list_error: why } }];\nif (res.error || !Array.isArray(res.items)) {\n  return fallback(res.error ? String(res.error.message || res.error).slice(0, 160) : 'resposta inesperada do calendarList');\n}\nconst wanted = new Set(WANTED.map(norm));\nconst out = res.items\n  .filter(c => !c.deleted && !c.hidden && (!wanted.size || wanted.has(norm(c.summaryOverride || c.summary)) || wanted.has(norm(c.summary))))\n  .map(c => ({ json: { calendar_id: c.id, calendar_label: c.summaryOverride || c.summary, list_error: null } }));\nreturn out.length ? out : fallback(wanted.size ? 'nenhuma das agendas de CHRONOS_CALENDARS encontrada no Google Calendar' : 'nenhuma agenda encontrada no Google Calendar');\n"
+        },
+        "id": "45783e48-5df0-4c7a-a474-6edf1f145741",
+        "name": "Selecionar agendas",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          660,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ encodeURIComponent($json.calendar_id) }}/events",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "timeMin",
+                "value": "={{ $('Período').first().json.start }}"
+              },
+              {
+                "name": "timeMax",
+                "value": "={{ $('Período').first().json.end }}"
+              },
+              {
+                "name": "singleEvents",
+                "value": "true"
+              },
+              {
+                "name": "orderBy",
+                "value": "startTime"
+              },
+              {
+                "name": "maxResults",
+                "value": "250"
+              }
+            ]
+          },
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleCalendarOAuth2Api",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "39c43e13-2d36-4666-85bd-137cd675f032",
+        "name": "Google: eventos da semana",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          880,
+          380
+        ],
+        "onError": "continueRegularOutput",
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "__CREDENTIAL:googleCalendarOAuth2Api__",
+            "name": "Google Calendar account"
+          }
+        },
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "const ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo'; // configurável no .env (CHRONOS_TIMEZONE)\nconst MAX = 3800; // teto por mensagem (o limite do Telegram é 4096)\nconst esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst per = $('Período').first().json;\nconst WD = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];\nconst WD3 = ['', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];\nconst dm = (d) => d.toFormat('dd/MM');\nconst hm = (d) => d.toFormat('HH:mm');\nconst short = (d) => WD3[d.weekday] + ' ' + dm(d);\nconst dayStart = (d) => d.startOf('day');\nconst weekFirst = DateTime.fromISO(per.start_date, { zone: ZONE });\nconst weekLast = DateTime.fromISO(per.last_date, { zone: ZONE });\n\n// Leitura dos eventos\nlet calError = null;\nlet calNote = null;\nconst entries = {}; // 'AAAA-MM-DD' → [{ order, key, title, text }]\nlet total = 0;\nconst sel = $('Selecionar agendas').all();\nif (sel[0] && sel[0].json.list_error) calNote = sel[0].json.list_error;\nconst results = $input.all();\nlet okCalendars = 0;\n\nfunction add(day, order, key, title, text) {\n  const k = day.toISODate();\n  (entries[k] = entries[k] || []).push({ order, key, title, text });\n}\n\nresults.forEach((it, i) => {\n  const r = it.json || {};\n  const label = (sel[i] && sel[i].json.calendar_label) || r.summary || 'Agenda';\n  if (r.error || !Array.isArray(r.items)) { calError = calError || String((r.error && (r.error.message || r.error)) || 'resposta inesperada').slice(0, 160); return; }\n  okCalendars++;\n  for (const e of r.items) {\n    if (!e || e.status === 'cancelled' || !e.start) continue;\n    if ((e.attendees || []).some((a) => a && a.self && a.responseStatus === 'declined')) continue;\n    const allDay = !!e.start.date;\n    let s;\n    let en;\n    let last;\n    if (allDay) {\n      s = DateTime.fromISO(e.start.date, { zone: ZONE });\n      en = e.end && e.end.date ? DateTime.fromISO(e.end.date, { zone: ZONE }) : s.plus({ days: 1 });\n      last = en.minus({ days: 1 }); // `end` de dia inteiro é exclusivo\n      if (last < s) last = s;\n    } else {\n      s = DateTime.fromISO(e.start.dateTime).setZone(ZONE);\n      en = e.end && e.end.dateTime ? DateTime.fromISO(e.end.dateTime).setZone(ZONE) : s;\n      last = en > s ? en.minus({ milliseconds: 1 }) : s; // termina às 00:00 → não ocupa o dia seguinte\n    }\n    if (!s.isValid || !en.isValid) continue;\n    const startDay = dayStart(s);\n    const lastDay = dayStart(last);\n    const from = startDay < weekFirst ? weekFirst : startDay;\n    const to = lastDay > weekLast ? weekLast : lastDay;\n    if (from > to) continue;\n\n    const title = esc(e.summary || '(sem título)') + (e.recurringEventId ? ' 🔁' : '');\n    const loc = e.location ? ' — ' + esc(String(e.location).replace(/\\s+/g, ' ').trim().slice(0, 80)) : '';\n    const cal = ' (' + esc(label) + ')';\n    const multi = lastDay > startDay;\n    const startsBefore = startDay < weekFirst;\n    const endsAfter = lastDay > weekLast;\n    const endTxt = allDay ? short(lastDay) : short(en) + ' ' + hm(en);\n    total++;\n\n    for (let d = from; d <= to; d = d.plus({ days: 1 })) {\n      const isFirstVisible = d.toMillis() === from.toMillis();\n      const isLastDay = d.toMillis() === lastDay.toMillis();\n      if (!multi) {\n        if (allDay) add(d, 0, s.toMillis(), title, '• Dia inteiro: ' + title + cal + loc);\n        else add(d, 2, s.toMillis(), title, '• ' + (en > s ? hm(s) + '–' + hm(en) : hm(s)) + ' ' + title + cal + loc);\n      } else if (isFirstVisible && !startsBefore) {\n        add(d, allDay ? 0 : 2, s.toMillis(), title, '• ' + (allDay ? 'Dia inteiro: ' : hm(s) + ' ') + title + ' ▶ até ' + endTxt + cal + loc);\n      } else if (isFirstVisible) {\n        add(d, 1, 0, title, '↳ ' + title + ' (desde ' + short(startDay) + ', até ' + endTxt + ')');\n      } else if (isLastDay) {\n        add(d, 1, 0, title, '↳ ' + title + ' (termina' + (allDay ? '' : ' ' + hm(en)) + ')');\n      } else if (d.toMillis() === weekLast.toMillis() && endsAfter) {\n        add(d, 1, 0, title, '↳ ' + title + ' (continua até ' + endTxt + ')');\n      } else {\n        add(d, 1, 0, title, '↳ ' + title + ' (continua)');\n      }\n    }\n  }\n});\n\n// Blocos por dia\nconst days = [];\nfor (let d = weekFirst; d <= weekLast; d = d.plus({ days: 1 })) {\n  const list = (entries[d.toISODate()] || []).sort((a, b) => a.order - b.order || a.key - b.key || a.title.localeCompare(b.title));\n  const head = '<b>' + WD[d.weekday] + ' ' + dm(d) + '</b>';\n  days.push({ key: d.toISODate(), text: list.length ? head + '\\n' + list.map((x) => x.text).join('\\n') : head + ' — livre' });\n}\n\nconst footer = [];\nif (calError && okCalendars === 0) footer.push('<i>Google Calendar indisponível: ' + esc(calError) + '</i>');\nelse if (calError) footer.push('<i>Uma das agendas não respondeu: ' + esc(calError) + '</i>');\nif (calNote) footer.push('<i>(só a agenda principal — ' + esc(calNote) + ')</i>');\nconst footerText = footer.length ? '\\n\\n' + footer.join('\\n') : '';\n\nconst header = '📅 <b>Sua semana</b> (' + per.label + ')';\nlet body = days.map((d) => d.text).join('\\n\\n');\nlet emptyWeek = false;\nif (okCalendars === 0) {\n  body = '';\n  days.length = 0;\n} else if (total === 0) {\n  emptyWeek = true;\n  body = 'Nenhum compromisso nesta semana. 🎉';\n  days.length = 0;\n}\nconst full = header + '\\n\\n' + body + footerText;\nconst needsSplit = !emptyWeek && okCalendars > 0 && full.length > MAX;\n\nconst system = 'Você divide uma agenda semanal em mensagens do Telegram. Responda APENAS JSON: {\"blocks\":[{\"first_day\":\"AAAA-MM-DD\"}, ...]}, onde cada item é o primeiro dia de uma mensagem, em ordem. O primeiro bloco começa no primeiro dia da lista. Regras: nunca divida no meio de um dia; use o menor número de mensagens possível; equilibre o tamanho entre elas; cada mensagem (soma dos caracteres dos dias + 2 por separador entre dias + ~60 de cabeçalho' + (footerText ? ' + ' + footerText.length + ' de rodapé na última' : '') + ') deve ter no máximo ' + MAX + ' caracteres. Use somente chaves de dia que existem na lista. Não reescreva nem resuma o texto.';\nconst user = 'Dias (chave | caracteres):\\n' + days.map((d) => d.key + ' | ' + d.text.length).join('\\n') + '\\n\\nTexto completo:\\n' + body;\n\nreturn [{ json: {\n  chat_id: $env.TELEGRAM_CHAT_ID, label: per.label, header, body, footer: footerText, days, max: MAX,\n  empty_week: emptyWeek, needs_split: needsSplit, total_events: total, ok_calendars: okCalendars, system, user,\n} }];\n"
+        },
+        "id": "bb9525a1-042a-4ecd-8366-0c0bd6d86628",
+        "name": "Montar agenda",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1100,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.needs_split }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "a3b59a7b-3e03-40d8-823a-1a785c4d9f69",
+        "name": "Passou do teto?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1320,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: \"deepseek-flash\", thinking: { type: \"disabled\" }, temperature: 0, max_tokens: 300, response_format: { type: \"json_object\" }, messages: [{ role: \"system\", content: $json.system }, { role: \"user\", content: $json.user }] }) }}",
+          "options": {
+            "timeout": 60000
+          }
+        },
+        "id": "93f24c67-0a05-4909-8628-fba4374b86fe",
+        "name": "DeepSeek: onde dividir",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1540,
+          280
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Monta as mensagens a partir dos dias. O DeepSeek só sugere onde cortar; o código monta e valida.\nconst m = $('Montar agenda').first().json;\nconst MAX = m.max;\nconst out = (texts) => texts.map((text) => ({ json: { chat_id: m.chat_id, text } }));\n\nif (!m.days.length) return out([m.header + '\\n\\n' + m.body + m.footer]);\n\n// Dia maior que o teto (improvável): único caso em que se quebra por linha, sem perder conteúdo.\nconst hdrMax = '📅 <b>Sua semana (99/99)</b> · ' + m.label + '\\n\\n';\nconst room = MAX - hdrMax.length - m.footer.length;\nconst units = [];\nfor (const d of m.days) {\n  if (d.text.length <= room) { units.push(d); continue; }\n  const lines = d.text.split('\\n');\n  const title = lines[0];\n  let cur = title;\n  for (const line of lines.slice(1)) {\n    if (cur.length + 1 + line.length > room) { units.push({ key: d.key, text: cur }); cur = title.replace('</b>', '</b> (cont.)') + '\\n' + line; } else cur += '\\n' + line;\n  }\n  units.push({ key: d.key, text: cur });\n}\n\nconst bodyOf = (g) => g.map((u) => u.text).join('\\n\\n');\nconst headerOf = (i, n) => (n === 1 ? m.header : '📅 <b>Sua semana (' + (i + 1) + '/' + n + ')</b> · ' + m.label);\nconst build = (groups) => groups.map((g, i) => headerOf(i, groups.length) + '\\n\\n' + bodyOf(g) + (i === groups.length - 1 ? m.footer : ''));\nconst original = bodyOf(units);\nconst valid = (groups) => groups.length > 0\n  && groups.every((g) => g.length > 0)\n  && groups.map(bodyOf).join('\\n\\n') === original\n  && build(groups).every((t) => t.length <= MAX);\n\n// Divisão determinística: encaixa dias em sequência enquanto couber.\nfunction greedy() {\n  const groups = [];\n  let cur = [];\n  for (const u of units) {\n    const fits = build([...groups, [...cur, u]]).every((t) => t.length <= MAX);\n    if (cur.length && !fits) { groups.push(cur); cur = [u]; } else cur.push(u);\n  }\n  if (cur.length) groups.push(cur);\n  return groups;\n}\n\nlet groups = null;\nif (m.needs_split) {\n  try {\n    const raw = $('DeepSeek: onde dividir').first().json.choices[0].message.content;\n    const firsts = (JSON.parse(raw).blocks || []).map((b) => b && b.first_day);\n    const idx = firsts.map((k) => units.findIndex((u) => u.key === k));\n    const ok = idx.length > 0 && idx[0] === 0 && idx.every((v, i) => v >= 0 && (i === 0 || v > idx[i - 1]));\n    if (ok) {\n      const cand = idx.map((start, i) => units.slice(start, i + 1 < idx.length ? idx[i + 1] : units.length));\n      if (valid(cand)) groups = cand;\n    }\n  } catch (e) { groups = null; }\n}\nif (!groups) {\n  groups = greedy();\n  if (!valid(groups)) groups = units.map((u) => [u]); // último recurso: um dia por mensagem\n}\nreturn out(build(groups));\n"
+        },
+        "id": "c63e8718-dae3-47d3-a7ce-be0b4359a0ad",
+        "name": "Dividir em mensagens",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1760,
+          380
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.text, parse_mode: \"HTML\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "887ecc5b-545b-42c8-971d-0ea5d0a04929",
+        "name": "Telegram: enviar agenda",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1980,
+          380
+        ]
+      }
+    ],
+    "connections": {
+      "Segunda às 9h30": {
+        "main": [
+          [
+            {
+              "node": "Período",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Chamado por /semana": {
+        "main": [
+          [
+            {
+              "node": "Período",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Período": {
+        "main": [
+          [
+            {
+              "node": "Google: listar agendas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google: listar agendas": {
+        "main": [
+          [
+            {
+              "node": "Selecionar agendas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Selecionar agendas": {
+        "main": [
+          [
+            {
+              "node": "Google: eventos da semana",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google: eventos da semana": {
+        "main": [
+          [
+            {
+              "node": "Montar agenda",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar agenda": {
+        "main": [
+          [
+            {
+              "node": "Passou do teto?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Passou do teto?": {
+        "main": [
+          [
+            {
+              "node": "DeepSeek: onde dividir",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Dividir em mensagens",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DeepSeek: onde dividir": {
+        "main": [
+          [
+            {
+              "node": "Dividir em mensagens",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Dividir em mensagens": {
+        "main": [
+          [
+            {
+              "node": "Telegram: enviar agenda",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

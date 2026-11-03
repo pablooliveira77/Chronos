@@ -1,0 +1,987 @@
+[
+  {
+    "id": "ChrFluxo1Capt001",
+    "name": "Chronos — Fluxo 1: Captura Inteligente",
+    "description": "Polling do Telegram a cada 10s. Processa os updates pendentes um por vez (Fluxo 1b) e só confirma o offset depois que cada um termina com sucesso; lock em chronos_estado evita execuções sobrepostas.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Fluxo 1 — Captura (polling)\n\n`getUpdates` a cada 10s (100% local, sem webhook). **Todos** os updates pendentes são processados, **um por vez**, pelo sub-workflow **Fluxo 1b: Processar mensagem**.\n\nO offset só avança (`getUpdates?offset=id+1`) **depois** que o update foi processado com sucesso — nada é marcado como lido antes. Se o 1b falhar, o loop para ali e a próxima varredura tenta de novo a partir dessa mensagem.\n\n⚠️ Se um webhook for registrado no bot, `getUpdates` retorna 409 — rode `deleteWebhook`.",
+          "color": 4,
+          "width": 520,
+          "height": 280
+        },
+        "id": "b7f295cb-7700-4294-ad9e-fa41d3547aa1",
+        "name": "Nota: polling",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -60,
+          -300
+        ]
+      },
+      {
+        "parameters": {
+          "content": "## Lock e tentativas (`chronos_estado`)\n\n`poll_lock` impede duas varreduras processando os mesmos updates (uma mensagem pode levar mais de 10s no DeepSeek). O lock expira em 3 min se a execução morrer.\n\n`tent:<update_id>` conta as tentativas. Na 4ª, o Chronos avisa no chat que pulou a mensagem e avança o offset — uma mensagem com problema não trava a fila para sempre.",
+          "color": 5,
+          "width": 460,
+          "height": 260
+        },
+        "id": "82268eaa-6211-4f59-b653-4436c64b0790",
+        "name": "Nota: lock",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          620,
+          -300
+        ]
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "seconds",
+                "secondsInterval": 10
+              }
+            ]
+          }
+        },
+        "id": "de6edb81-9711-48ba-b3ba-19e0514649a6",
+        "name": "A cada 10s",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.4,
+        "position": [
+          0,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getUpdates",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "timeout",
+                "value": "0"
+              },
+              {
+                "name": "limit",
+                "value": "50"
+              },
+              {
+                "name": "allowed_updates",
+                "value": "[\"message\",\"callback_query\"]"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "b332c02f-4ac8-4aff-ba4a-840132c90176",
+        "name": "Telegram getUpdates",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          220,
+          300
+        ],
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "// Normaliza cada update em um item. Sem updates (ou erro de rede no getUpdates) → nenhum item, nada roda.\nconst out = [];\nconst RESUMO = ['/hoje', '/resumo'];\nconst AJUDA = ['/start', '/id', '/ajuda', '/help'];\nconst EDIT = ['/edit', '/editar'];\nconst SEMANA = ['/semana', '/metricas', '/métricas'];\nfor (const item of $input.all()) {\n  for (const u of (item.json.result || [])) {\n    if (u.callback_query) {\n      const cq = u.callback_query;\n      const data = String(cq.data || '');\n      const sep = data.indexOf(':');\n      out.push({ json: {\n        update_id: u.update_id,\n        kind: 'callback',\n        chat_id: cq.message && cq.message.chat ? cq.message.chat.id : cq.from.id,\n        callback_id: cq.id,\n        action: sep > 0 ? data.slice(0, sep) : data,\n        task_id: sep > 0 ? data.slice(sep + 1) : '',\n        message_id: cq.message ? cq.message.message_id : null,\n        message_text: cq.message && typeof cq.message.text === 'string' ? cq.message.text : '',\n      } });\n      continue;\n    }\n    const m = u.message;\n    if (!m || typeof m.text !== 'string') {\n      out.push({ json: { update_id: u.update_id, kind: 'ignore', chat_id: m && m.chat ? m.chat.id : null } });\n      continue;\n    }\n    const text = m.text.trim();\n    let kind = 'text';\n    let command = '';\n    let args = '';\n    if (text.startsWith('/')) {\n      command = text.split(/\\s+/)[0].toLowerCase().replace(/@.*$/, '');\n      args = text.slice(text.split(/\\s+/)[0].length).trim();\n      kind = RESUMO.includes(command) ? 'cmd_resumo'\n        : EDIT.includes(command) ? 'cmd_edit'\n        : SEMANA.includes(command) ? 'cmd_semana'\n        : 'cmd_help';\n    }\n    out.push({ json: { update_id: u.update_id, kind, command, args, chat_id: m.chat.id, text, from: m.from ? (m.from.first_name || '') : '' } });\n  }\n}\nout.sort((a, b) => a.json.update_id - b.json.update_id);\nreturn out;\n"
+        },
+        "id": "f4992326-0f22-42ea-baaa-0c9df42856d7",
+        "name": "Extrair updates",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "poll_lock"
+              }
+            ]
+          },
+          "limit": 1
+        },
+        "id": "37b7cd5c-071a-4a69-b2d4-3d12ede80d07",
+        "name": "Ler lock",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          660,
+          300
+        ],
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "parameters": {
+          "jsCode": "// Outra varredura ainda está processando (lock com menos de 3 min) → para aqui; os updates continuam pendentes no Telegram.\nconst LOCK_MS = 3 * 60 * 1000;\nconst row = $input.all().map(i => i.json).find(r => r && r.chave === 'poll_lock');\nif (row && row.valor && Date.now() - Number(row.ts || 0) < LOCK_MS) return [];\nreturn [{ json: { token: String($execution.id) } }];\n"
+        },
+        "id": "305965de-3a62-4787-86a7-58cede882617",
+        "name": "Checar lock",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "chave": "poll_lock",
+              "valor": "={{ $('Checar lock').first().json.token }}",
+              "ts": "={{ Date.now() }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "chave",
+                "displayName": "chave",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "valor",
+                "displayName": "valor",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ts",
+                "displayName": "ts",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "poll_lock"
+              }
+            ]
+          }
+        },
+        "id": "01fd1e3c-ce22-4e97-ad7f-4d3fa6573ba4",
+        "name": "Pegar lock",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1100,
+          300
+        ],
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "parameters": {
+          "jsCode": "return $('Extrair updates').all().map(i => ({ json: i.json }));\n"
+        },
+        "id": "b5e458e6-9b7a-4685-bb27-fd57ddce7f1b",
+        "name": "Updates a processar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1320,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "batchSize": 1,
+          "options": {}
+        },
+        "id": "0b6f912e-611b-492b-873d-18382cc70846",
+        "name": "Um update por vez",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [
+          1540,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "return $input.all();\n"
+        },
+        "id": "e14dda33-b93a-4d01-80ee-2106bf38efa2",
+        "name": "Update atual",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1760,
+          500
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "={{ 'tent:' + $json.update_id }}"
+              }
+            ]
+          },
+          "limit": 1
+        },
+        "id": "41b18e6c-56a9-4f22-b530-d4b49ede800f",
+        "name": "Ler tentativas",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1980,
+          500
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const u = $('Update atual').first().json;\nconst row = $input.all().map(i => i.json).find(r => r && r.chave === 'tent:' + u.update_id);\nconst tentativa = (row ? Number(row.valor) || 0 : 0) + 1;\nreturn [{ json: { ...u, tentativa } }];\n"
+        },
+        "id": "167fbab5-af24-45a2-aa08-0483e299987a",
+        "name": "Contar tentativa",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2200,
+          500
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "chave": "={{ 'tent:' + $('Contar tentativa').first().json.update_id }}",
+              "valor": "={{ String($('Contar tentativa').first().json.tentativa) }}",
+              "ts": "={{ Date.now() }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "chave",
+                "displayName": "chave",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "valor",
+                "displayName": "valor",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ts",
+                "displayName": "ts",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "={{ 'tent:' + $('Contar tentativa').first().json.update_id }}"
+              }
+            ]
+          }
+        },
+        "id": "d6300fbc-48ea-4ee4-8d2b-26c0e7904e84",
+        "name": "Salvar tentativa",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2420,
+          500
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "chave": "poll_lock",
+              "valor": "={{ $('Checar lock').first().json.token }}",
+              "ts": "={{ Date.now() }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "chave",
+                "displayName": "chave",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "valor",
+                "displayName": "valor",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ts",
+                "displayName": "ts",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "poll_lock"
+              }
+            ]
+          }
+        },
+        "id": "580269b3-7ac4-4316-bb76-4573c5412e8b",
+        "name": "Renovar lock",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          2640,
+          500
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $('Contar tentativa').first().json.tentativa > 3 }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "c45efd53-28a9-4939-9262-f37f23ae490a",
+        "name": "Desistir? (3 falhas)",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2860,
+          500
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{ json: $('Contar tentativa').first().json }];\n"
+        },
+        "id": "630ca3d5-f40b-4c5d-a8c1-3e560e3c0005",
+        "name": "Montar entrada",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          3080,
+          600
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:fluxo-1b-processar-mensagem__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "c4d2dbb2-bfad-4a07-a4cc-548302e82e80",
+        "name": "Fluxo 1b: processar mensagem",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          3300,
+          600
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify((() => { const u = $(\"Contar tentativa\").first().json; const esc = (s) => String(s == null ? \"\" : s).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\"); return { chat_id: u.chat_id, parse_mode: \"HTML\", text: \"⚠️ Tentei processar esta mensagem \" + (u.tentativa - 1) + \" vezes e falhou em todas; vou pular para não travar as próximas.\\n\\n<i>\" + esc(u.text || u.command || u.kind) + \"</i>\\n\\nSe ainda for necessária, mande de novo.\" }; })()) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "4dc93e44-172b-4f85-9fe3-db0533d2d068",
+        "name": "Telegram: pulei a mensagem",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3300,
+          380
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/getUpdates",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "offset",
+                "value": "={{ $('Update atual').first().json.update_id + 1 }}"
+              },
+              {
+                "name": "limit",
+                "value": "1"
+              },
+              {
+                "name": "timeout",
+                "value": "0"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "21f35754-d29c-43f7-8cb2-3ee4759bba81",
+        "name": "Confirmar offset",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3540,
+          500
+        ],
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "deleteRows",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "={{ 'tent:' + $('Update atual').first().json.update_id }}"
+              }
+            ]
+          }
+        },
+        "id": "38dc7bc9-04a9-408c-b267-36f0e2ada694",
+        "name": "Limpar tentativa",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          3760,
+          500
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "chave": "poll_lock",
+              "valor": "",
+              "ts": 0
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "chave",
+                "displayName": "chave",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "valor",
+                "displayName": "valor",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ts",
+                "displayName": "ts",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "poll_lock"
+              }
+            ]
+          }
+        },
+        "id": "d348520b-3f5c-45d1-93fe-c93b6ca872d1",
+        "name": "Liberar lock",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1760,
+          160
+        ],
+        "alwaysOutputData": true,
+        "executeOnce": true
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "upsert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_estado__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "chave": "poll_lock",
+              "valor": "",
+              "ts": 0
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "chave",
+                "displayName": "chave",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "valor",
+                "displayName": "valor",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "ts",
+                "displayName": "ts",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "chave",
+                "condition": "eq",
+                "keyValue": "poll_lock"
+              }
+            ]
+          }
+        },
+        "id": "f0c0becf-5332-4628-a448-04569fcb1b39",
+        "name": "Liberar lock (falha)",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          3540,
+          760
+        ],
+        "alwaysOutputData": true,
+        "executeOnce": true
+      }
+    ],
+    "connections": {
+      "A cada 10s": {
+        "main": [
+          [
+            {
+              "node": "Telegram getUpdates",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram getUpdates": {
+        "main": [
+          [
+            {
+              "node": "Extrair updates",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Extrair updates": {
+        "main": [
+          [
+            {
+              "node": "Ler lock",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ler lock": {
+        "main": [
+          [
+            {
+              "node": "Checar lock",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Checar lock": {
+        "main": [
+          [
+            {
+              "node": "Pegar lock",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pegar lock": {
+        "main": [
+          [
+            {
+              "node": "Updates a processar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Updates a processar": {
+        "main": [
+          [
+            {
+              "node": "Um update por vez",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Um update por vez": {
+        "main": [
+          [
+            {
+              "node": "Liberar lock",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Update atual",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Update atual": {
+        "main": [
+          [
+            {
+              "node": "Ler tentativas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ler tentativas": {
+        "main": [
+          [
+            {
+              "node": "Contar tentativa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Contar tentativa": {
+        "main": [
+          [
+            {
+              "node": "Salvar tentativa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Salvar tentativa": {
+        "main": [
+          [
+            {
+              "node": "Renovar lock",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Renovar lock": {
+        "main": [
+          [
+            {
+              "node": "Desistir? (3 falhas)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Desistir? (3 falhas)": {
+        "main": [
+          [
+            {
+              "node": "Telegram: pulei a mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Montar entrada",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar entrada": {
+        "main": [
+          [
+            {
+              "node": "Fluxo 1b: processar mensagem",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Fluxo 1b: processar mensagem": {
+        "main": [
+          [
+            {
+              "node": "Confirmar offset",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Liberar lock (falha)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram: pulei a mensagem": {
+        "main": [
+          [
+            {
+              "node": "Confirmar offset",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Confirmar offset": {
+        "main": [
+          [
+            {
+              "node": "Limpar tentativa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Limpar tentativa": {
+        "main": [
+          [
+            {
+              "node": "Um update por vez",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

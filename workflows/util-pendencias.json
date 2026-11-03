@@ -1,0 +1,1179 @@
+[
+  {
+    "id": "ChrUtilPendenc01",
+    "name": "Chronos — Util: Pendências",
+    "description": "Resolve os botões pk:<pid>:<n> das perguntas de subtarefa (M9) e de /edit ambíguo (M2), guardadas em chronos_pendencias; a cada 2 min cria sem tarefa-pai as subtarefas sem resposta há 30 min.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Util: Pendências\n\nPerguntas com botões ficam em `chronos_pendencias` (`pid`, `tipo` = `subtarefa` | `edicao`, `status` = `aberta` → `resolvida` | `cancelada` | `expirada`, `payload` JSON).\n\n**Botão** `pk:<pid>:<n>` (candidato n), `pk:<pid>:in` (criar sem tarefa-pai) ou `pk:<pid>:x` (cancelar).\n\nO `payload` guarda também as `subtarefas` e o `depth` de cada candidato: o clique (ou o timeout) cria a tarefa **e** as subtarefas (Util: Criar subtarefas).\n\n**A cada 2 min**: a subtarefa aberta mais antiga com mais de **30 min** é criada sem tarefa-pai (projeto que a IA escolheu) e o chat é avisado. Perguntas de `/edit` não expiram.",
+          "color": 4,
+          "width": 480,
+          "height": 300
+        },
+        "id": "569a952f-51d2-4f69-be53-5ae1cbfa605c",
+        "name": "Nota: pendências",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -40,
+          -300
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "b00ac4cb-0e8d-44db-9bff-952d5befdc46",
+        "name": "Botão escolhido",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "pid",
+                "condition": "eq",
+                "keyValue": "={{ String($json.task_id || '').split(':')[0] }}"
+              }
+            ]
+          },
+          "limit": 1
+        },
+        "id": "a44d7fe8-a2ad-4d31-abc9-e232ab8752c3",
+        "name": "Ler pendência",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          220,
+          300
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst u = $('Botão escolhido').first().json;\nconst [pid, idx] = String(u.task_id || '').split(':');\nconst row = $input.all().map(i => i.json).find(r => r && r.pid === pid);\nconst base = { chat_id: u.chat_id, callback_id: u.callback_id, message_id: u.message_id, message_text: u.message_text || '', pid };\nconst STATUS = { resolvida: 'já foi respondida', cancelada: 'foi cancelada', expirada: 'expirou (a tarefa já foi criada sem tarefa-pai)' };\nif (!row) return [{ json: { ...base, valida: false, toast: '⚠️ Não encontrei essa pergunta.' } }];\nif (row.status !== 'aberta') return [{ json: { ...base, valida: false, toast: '⚠️ Esta pergunta ' + (STATUS[row.status] || 'não está mais aberta') + '.' } }];\n\nlet payload = {};\ntry { payload = JSON.parse(row.payload || '{}'); } catch (e) { payload = {}; }\nconst cands = payload.candidates || [];\n\nif (idx === 'x') return [{ json: { ...base, valida: true, acao: 'cancelar', novo_status: 'cancelada', toast: '✖️ Cancelado — nada foi feito.', nota: row.tipo === 'edicao' ? '✖️ Cancelado — nada foi alterado.' : '✖️ Cancelado — nada foi criado.' } }];\n\nif (row.tipo === 'edicao') {\n  const c = cands[parseInt(idx, 10)];\n  if (!c) return [{ json: { ...base, valida: false, toast: '⚠️ Opção inválida.' } }];\n  return [{ json: { ...base, valida: true, acao: 'editar', novo_status: 'resolvida', edit_task_id: c.id, adjust: payload.adjust, toast: '✏️ Editando “' + c.content + '”…', nota: '👉 Escolhida: ' + c.content } }];\n}\n\nif (row.tipo === 'subtarefa') {\n  const MAX_DEPTH = 4; // limite de aninhamento do Todoist\n  const body = { ...(payload.task_body || {}) };\n  let parent = null;\n  if (idx !== 'in') {\n    parent = cands[parseInt(idx, 10)];\n    if (!parent) return [{ json: { ...base, valida: false, toast: '⚠️ Opção inválida.' } }];\n    body.parent_id = parent.id;\n    delete body.project_id;\n    delete body.section_id;\n  }\n  let subs = payload.subtarefas || [];\n  let nestNote = '';\n  if (subs.length && (parent ? (parent.depth || 1) : 0) + 2 > MAX_DEPTH) {\n    body.description = (body.description ? body.description + '\\n' : '') + subs.map((s) => '- ' + s.title + (s.due ? ' (' + s.due + ')' : '')).join('\\n');\n    nestNote = '<i>Os ' + subs.length + ' passos foram para a descrição (limite de níveis de subtarefa do Todoist).</i>';\n    subs = [];\n  }\n  const where = esc(payload.project_name || 'Entrada') + (payload.section_name ? ' › ' + esc(payload.section_name) : '');\n  const confirm = [\n    parent ? '✅ <b>Subtarefa criada</b>' : '✅ <b>Tarefa criada</b> <i>(sem tarefa-pai)</i>',\n    '',\n    '<b>' + esc(payload.title) + '</b>',\n    payload.description ? esc(String(payload.description).slice(0, 400)) : null,\n    parent ? '📁 ' + esc(parent.project) + ' ↳ ' + esc(parent.content) : '📁 ' + where,\n    payload.prio_label ? '⚑ ' + payload.prio_label : null,\n  ].filter(l => l !== null).join('\\n');\n  return [{ json: { ...base, valida: true, acao: 'criar', novo_status: 'resolvida', task_body: body, subtarefas: subs, nest_note: nestNote, confirm_text: confirm,\n    toast: parent ? '↳ Criando dentro de “' + parent.content + '”…' : '📥 Criando sem tarefa-pai…',\n    nota: parent ? '👉 Escolhida: ' + (parent.path || parent.content) : '👉 Criar sem tarefa-pai' } }];\n}\nreturn [{ json: { ...base, valida: false, toast: '⚠️ Tipo de pergunta desconhecido.' } }];\n"
+        },
+        "id": "e14d4584-a0a9-40d2-89b8-9fd60657d0d6",
+        "name": "Resolver escolha",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.valida }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "691f1212-da1e-4666-b977-a98db98bf604",
+        "name": "Escolha válida?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          660,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ callback_query_id: $json.callback_id, text: String($json.toast).slice(0, 200), show_alert: true }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "49e3c6f6-293b-4c50-9aa5-0710a55d2d15",
+        "name": "Telegram: aviso no botão",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          880,
+          480
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "status": "={{ $('Resolver escolha').first().json.novo_status }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "status",
+                "displayName": "status",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "pid",
+                "condition": "eq",
+                "keyValue": "={{ $('Resolver escolha').first().json.pid }}"
+              }
+            ]
+          }
+        },
+        "id": "2e8e8b47-3419-4905-ad98-a2e484258dd5",
+        "name": "Marcar resolvida",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          880,
+          220
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/answerCallbackQuery",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ callback_query_id: $(\"Resolver escolha\").first().json.callback_id, text: String($(\"Resolver escolha\").first().json.toast).slice(0, 200) }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "32855112-8354-4517-b5fb-815156178084",
+        "name": "Telegram: responder botão",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1100,
+          220
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageText",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify((() => { const r = $(\"Resolver escolha\").first().json; const base = String(r.message_text || \"\").replace(/\\n*Sem resposta em 30 min[^\\n]*$/, \"\"); return { chat_id: r.chat_id, message_id: r.message_id, text: (base ? base + \"\\n\\n\" : \"\") + r.nota, reply_markup: { inline_keyboard: [] } }; })()) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "51cb8acb-c127-4dfd-bd69-41a3d02e6486",
+        "name": "Telegram: registrar escolha",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1320,
+          220
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $('Resolver escolha').first().json.acao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "editar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "editar"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $('Resolver escolha').first().json.acao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "criar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "criar"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "none"
+          }
+        },
+        "id": "47e6c812-4d16-48a2-bc64-cdf997d4d547",
+        "name": "Ação?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          1540,
+          220
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const r = $('Resolver escolha').first().json;\nreturn [{ json: { chat_id: r.chat_id, edit_task_id: r.edit_task_id, adjust: r.adjust } }];\n"
+        },
+        "id": "bcf94f96-4254-47ac-90ac-974cfd5c938b",
+        "name": "Pedido de edição",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1760,
+          80
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:fluxo-3-editar-tarefa__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "84880a23-e4f3-482c-a212-a9adb1bc7327",
+        "name": "Fluxo 3: editar tarefa",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          1980,
+          80
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Resolver escolha').first().json.task_body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "d621aabb-8d22-4b04-b773-dfc1b43bbce0",
+        "name": "Todoist: criar tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1760,
+          320
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ !!($json.due && $json.due.date && !String($json.due.date).includes(\"T\")) }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "0d4cacf6-91c4-4f71-bd23-110470f263c8",
+        "name": "Tem data sem horário?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          2420,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-horario-livre__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each",
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "task_id": "={{ $json.id }}",
+              "date": "={{ $json.due.date }}",
+              "echo": "={{ {} }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "task_id",
+                "displayName": "task_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "date",
+                "displayName": "date",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "echo",
+                "displayName": "echo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "object"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "id": "8f39f010-f2d1-4b37-add5-dea6e4b1e8f4",
+        "name": "Util: horário livre",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          2640,
+          240
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const r = $('Resolver escolha').first().json;\nconst j = $input.first().json || {};\nlet extra = '';\nif (j.task_id && j.date) {\n  extra = '\\n📅 ' + j.date + (j.time ? ' ⏰ ' + j.time : '') + (j.reason ? ' <i>(' + j.reason + ')</i>' : '');\n} else if (j.due && j.due.date) {\n  const d = String(j.due.date);\n  extra = '\\n📅 ' + (d.includes('T') ? DateTime.fromISO(d, { zone: $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo' }).toFormat('yyyy-MM-dd ⏰ HH:mm') : d);\n}\nlet subs = null;\ntry { subs = $('Util: criar subtarefas').first().json; } catch (e) { subs = null; }\nconst more = [subs && subs.lines ? subs.lines : '', r.nest_note || ''].filter(Boolean).join('\\n');\nreturn [{ json: { tg: { chat_id: r.chat_id, text: r.confirm_text + extra + (more ? '\\n' + more : ''), parse_mode: 'HTML' } } }];\n"
+        },
+        "id": "7920c4fe-d41c-4518-80a1-5aaa716d6130",
+        "name": "Montar confirmação",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2860,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.tg) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "4a79700c-73f9-4ec5-b006-517fe9ce292e",
+        "name": "Telegram: confirmar tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3080,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Resolver escolha\").first().json.chat_id, parse_mode: \"HTML\", text: \"⚠️ Não consegui criar a tarefa no Todoist.\\n<i>\" + String(($json.error && $json.error.message) || \"erro desconhecido\").slice(0, 300).replace(/</g, \"&lt;\") + \"</i>\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "58ecfe2d-afa1-451a-a56c-6f9df9b60e22",
+        "name": "Telegram: erro ao criar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1980,
+          520
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "minutes",
+                "minutesInterval": 2
+              }
+            ]
+          }
+        },
+        "id": "35bf950e-f0c7-4a45-9a1a-77f8eda6a070",
+        "name": "A cada 2 min",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.4,
+        "position": [
+          0,
+          900
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "get",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "status",
+                "condition": "eq",
+                "keyValue": "aberta"
+              },
+              {
+                "keyName": "tipo",
+                "condition": "eq",
+                "keyValue": "subtarefa"
+              },
+              {
+                "keyName": "criado_ms",
+                "condition": "lt",
+                "keyValue": "={{ Date.now() - 30 * 60 * 1000 }}"
+              }
+            ]
+          },
+          "limit": 1,
+          "orderBy": true,
+          "orderByColumn": "criado_ms",
+          "orderByDirection": "ASC"
+        },
+        "id": "8f82cc93-829b-40d6-984c-dfbb488839e0",
+        "name": "Subtarefa vencida",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          220,
+          900
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst row = $input.first().json;\nlet payload = {};\ntry { payload = JSON.parse(row.payload || '{}'); } catch (e) { payload = {}; }\nconst where = esc(payload.project_name || 'Entrada') + (payload.section_name ? ' › ' + esc(payload.section_name) : '');\nreturn [{ json: {\n  pid: row.pid,\n  chat_id: row.chat_id,\n  message_id: row.message_id || null,\n  task_body: payload.task_body || { content: payload.title || 'Tarefa sem título' },\n  subtarefas: payload.subtarefas || [],\n  aviso: '⏰ Sem resposta em 30 min: criei <b>' + esc(payload.title) + '</b> sem tarefa-pai (📁 ' + where + ').'\n    + (payload.parent_query ? '\\n<i>Tarefa-pai citada: “' + esc(payload.parent_query) + '”.</i>' : ''),\n} }];\n"
+        },
+        "id": "b4749dc1-d284-4ade-a40d-297b978dd640",
+        "name": "Preparar fallback",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          440,
+          900
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "status": "expirada"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "status",
+                "displayName": "status",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "pid",
+                "condition": "eq",
+                "keyValue": "={{ $('Preparar fallback').first().json.pid }}"
+              }
+            ]
+          }
+        },
+        "id": "9d4af4cd-6871-4898-a0ab-0f3ee8e981bf",
+        "name": "Marcar expirada",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          660,
+          900
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Preparar fallback').first().json.task_body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "cf9a8bad-07dc-4ac3-af97-deebd465029a",
+        "name": "Todoist: criar sem tarefa-pai",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          880,
+          900
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Preparar fallback\").first().json.chat_id, parse_mode: \"HTML\", text: $(\"Todoist: criar sem tarefa-pai\").first().json.id ? $(\"Preparar fallback\").first().json.aviso + ($json.lines ? \"\\n\" + $json.lines : \"\") : \"⚠️ A pergunta de subtarefa expirou, mas não consegui criar a tarefa no Todoist: \" + String(($(\"Todoist: criar sem tarefa-pai\").first().json.error && $(\"Todoist: criar sem tarefa-pai\").first().json.error.message) || \"erro\").slice(0, 200).replace(/</g, \"&lt;\") }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "e01d546b-d7c0-4bde-af9e-2b2fae020c5d",
+        "name": "Telegram: avisar fallback",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1320,
+          900
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ !!$('Preparar fallback').first().json.message_id }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "6e77502d-11c5-4d1c-8117-f044bb87263d",
+        "name": "Tem mensagem da pergunta?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1540,
+          900
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/editMessageReplyMarkup",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Preparar fallback\").first().json.chat_id, message_id: $(\"Preparar fallback\").first().json.message_id, reply_markup: { inline_keyboard: [] } }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "38c2339d-a0ab-4ab9-9542-0d36ea34106c",
+        "name": "Telegram: tirar botões (expirada)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1760,
+          840
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-criar-subtarefas__"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "parent_id": "={{ $json.id }}",
+              "priority": "={{ $('Resolver escolha').first().json.task_body.priority }}",
+              "subs_json": "={{ JSON.stringify($('Resolver escolha').first().json.subtarefas || []) }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "parent_id",
+                "displayName": "parent_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "priority",
+                "displayName": "priority",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "number"
+              },
+              {
+                "id": "subs_json",
+                "displayName": "subs_json",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "f4ee8981-2adf-4ac1-b444-a5d742da6787",
+        "name": "Util: criar subtarefas",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          1980,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "return [{ json: $('Todoist: criar tarefa').first().json }];\n"
+        },
+        "id": "00fd51d5-b2d4-4530-9dc2-62d65aebd038",
+        "name": "Tarefa criada",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2200,
+          320
+        ]
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-criar-subtarefas__"
+          },
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "parent_id": "={{ $json.id }}",
+              "priority": "={{ $('Preparar fallback').first().json.task_body.priority }}",
+              "subs_json": "={{ JSON.stringify($('Preparar fallback').first().json.subtarefas || []) }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "parent_id",
+                "displayName": "parent_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "priority",
+                "displayName": "priority",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "number"
+              },
+              {
+                "id": "subs_json",
+                "displayName": "subs_json",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each"
+        },
+        "id": "12582842-701f-4730-bd4f-41274715f32f",
+        "name": "Util: criar subtarefas (fallback)",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          1100,
+          900
+        ],
+        "onError": "continueRegularOutput"
+      }
+    ],
+    "connections": {
+      "Botão escolhido": {
+        "main": [
+          [
+            {
+              "node": "Ler pendência",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ler pendência": {
+        "main": [
+          [
+            {
+              "node": "Resolver escolha",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Resolver escolha": {
+        "main": [
+          [
+            {
+              "node": "Escolha válida?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Escolha válida?": {
+        "main": [
+          [
+            {
+              "node": "Marcar resolvida",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: aviso no botão",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Marcar resolvida": {
+        "main": [
+          [
+            {
+              "node": "Telegram: responder botão",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram: responder botão": {
+        "main": [
+          [
+            {
+              "node": "Telegram: registrar escolha",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram: registrar escolha": {
+        "main": [
+          [
+            {
+              "node": "Ação?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Ação?": {
+        "main": [
+          [
+            {
+              "node": "Pedido de edição",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Todoist: criar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Pedido de edição": {
+        "main": [
+          [
+            {
+              "node": "Fluxo 3: editar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: criar tarefa": {
+        "main": [
+          [
+            {
+              "node": "Util: criar subtarefas",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: erro ao criar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tem data sem horário?": {
+        "main": [
+          [
+            {
+              "node": "Util: horário livre",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Montar confirmação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: horário livre": {
+        "main": [
+          [
+            {
+              "node": "Montar confirmação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar confirmação": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "A cada 2 min": {
+        "main": [
+          [
+            {
+              "node": "Subtarefa vencida",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Subtarefa vencida": {
+        "main": [
+          [
+            {
+              "node": "Preparar fallback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Preparar fallback": {
+        "main": [
+          [
+            {
+              "node": "Marcar expirada",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Marcar expirada": {
+        "main": [
+          [
+            {
+              "node": "Todoist: criar sem tarefa-pai",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: criar sem tarefa-pai": {
+        "main": [
+          [
+            {
+              "node": "Util: criar subtarefas (fallback)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram: avisar fallback": {
+        "main": [
+          [
+            {
+              "node": "Tem mensagem da pergunta?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tem mensagem da pergunta?": {
+        "main": [
+          [
+            {
+              "node": "Telegram: tirar botões (expirada)",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: criar subtarefas": {
+        "main": [
+          [
+            {
+              "node": "Tarefa criada",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tarefa criada": {
+        "main": [
+          [
+            {
+              "node": "Tem data sem horário?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: criar subtarefas (fallback)": {
+        "main": [
+          [
+            {
+              "node": "Telegram: avisar fallback",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

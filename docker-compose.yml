@@ -1,0 +1,33 @@
+volumes:
+  n8n_storage:
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: chronos-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=${CHRONOS_TIMEZONE:-America/Sao_Paulo}
+      - TZ=${CHRONOS_TIMEZONE:-America/Sao_Paulo}
+      - N8N_RUNNERS_ENABLED=true
+      # Segredos vindos do .env, expostos aos workflows via $env.*
+      # (n8n 2.x bloqueia $env por padrão; liberar é necessário para este design)
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TODOIST_API_TOKEN=${TODOIST_API_TOKEN}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      # Fuso e idioma lidos pelos workflows ($env.CHRONOS_TIMEZONE / $env.CHRONOS_LOCALE)
+      - CHRONOS_TIMEZONE=${CHRONOS_TIMEZONE:-America/Sao_Paulo}
+      - CHRONOS_LOCALE=${CHRONOS_LOCALE:-pt-BR}
+      - CHRONOS_CALENDARS=${CHRONOS_CALENDARS:-}
+    volumes:
+      - n8n_storage:/home/node/.n8n
+      # Exports dos workflows versionados no repositório (somente leitura)
+      - ./workflows:/workflows:ro

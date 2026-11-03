@@ -1,0 +1,340 @@
+[
+  {
+    "id": "ChrUtilHorario01",
+    "name": "Chronos — Util: Horário livre",
+    "description": "Sub-workflow: dado task_id + data, encontra o primeiro horário livre do dia (mantendo o horário original se viável) e grava due_datetime no Todoist.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "id": "0d788707-d3b0-4850-ac1e-26f6d2cb0271",
+        "name": "Sticky Note 51d462c0",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          100,
+          300
+        ],
+        "parameters": {
+          "content": "## Util: Horário livre\n\nChamado pelo Fluxo 1 com `task_id` + `date` (YYYY-MM-DD).\n\n1. Lê a tarefa e as tarefas do dia (`filter?query=date: <date>`).\n2. Ocupados = tarefas com hora (duração da tarefa ou 60 min).\n3. Candidatos: horário original da tarefa (se tinha) e depois cada hora cheia entre **08h e 20h** (`WORK_START`/`WORK_END` no Code). Se a data é hoje, só a partir da próxima hora cheia.\n4. Grava `due_datetime` no Todoist e devolve `{ok, time, reason}`.\n\nAjuste a janela de trabalho nas constantes do nó **Escolher horário livre**.",
+          "color": 4
+        }
+      },
+      {
+        "id": "b44d90be-00c1-4249-bf5b-cffea093908f",
+        "name": "Entrada",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          300
+        ],
+        "parameters": {
+          "inputSource": "workflowInputs",
+          "workflowInputs": {
+            "values": [
+              {
+                "name": "task_id",
+                "type": "string"
+              },
+              {
+                "name": "date",
+                "type": "string"
+              },
+              {
+                "name": "echo",
+                "type": "object"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "32a8cc66-b495-4004-925f-d253b5adb66d",
+        "name": "Obter tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          220,
+          200
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $json.task_id }}",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        }
+      },
+      {
+        "id": "7306a233-bae1-460c-bc7e-93d79646b119",
+        "name": "Tarefas do dia",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          440,
+          200
+        ],
+        "parameters": {
+          "method": "GET",
+          "url": "https://api.todoist.com/api/v1/tasks/filter",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "=date: {{ $(\"Entrada\").item.json.date }}"
+              },
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        }
+      },
+      {
+        "id": "2f84e774-64ec-4e95-9e17-1ce6eb09dcea",
+        "name": "Escolher horário livre",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          660,
+          200
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "const WORK_START = 8;\nconst WORK_END = 20;\nconst SLOT_MIN = 60;\nconst ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo'; // configurável no .env (CHRONOS_TIMEZONE)\n\nconst input = $('Entrada').first().json;\nconst task = $('Obter tarefa').first().json;\nlet dayTasks = [];\ntry { dayTasks = $input.first().json.results || []; } catch (e) { dayTasks = []; }\n\nconst day = DateTime.fromISO(String(input.date), { zone: ZONE });\nconst now = DateTime.now().setZone(ZONE);\n\nconst busy = [];\nfor (const t of dayTasks) {\n  if (!t || t.id === task.id || !t.due || !t.due.date || !String(t.due.date).includes('T')) continue;\n  const s = DateTime.fromISO(t.due.date, { zone: ZONE });\n  const dur = t.duration && t.duration.unit === 'minute' && t.duration.amount > 0 ? t.duration.amount : SLOT_MIN;\n  busy.push({ s, e: s.plus({ minutes: dur }), content: t.content });\n}\nconst isFree = (s, e) => busy.every(b => e <= b.s || s >= b.e);\n\nlet earliest = day.startOf('day');\nif (day.hasSame(now, 'day')) earliest = now.startOf('hour').plus({ hours: 1 });\n\nconst candidates = [];\nconst hasTime = task.due && task.due.date && String(task.due.date).includes('T');\nlet originalLabel = null;\nif (hasTime) {\n  const orig = DateTime.fromISO(task.due.date, { zone: ZONE });\n  originalLabel = orig.toFormat('HH:mm');\n  candidates.push({ dt: day.set({ hour: orig.hour, minute: orig.minute, second: 0, millisecond: 0 }), reason: 'horário original mantido' });\n}\nfor (let h = WORK_START; h < WORK_END; h++) {\n  candidates.push({ dt: day.set({ hour: h, minute: 0, second: 0, millisecond: 0 }), reason: 'próximo horário livre' });\n}\n\nlet chosen = null;\nfor (const c of candidates) {\n  if (c.dt < earliest) continue;\n  if (!isFree(c.dt, c.dt.plus({ minutes: SLOT_MIN }))) continue;\n  chosen = c; break;\n}\n\nreturn [{ json: {\n  task_id: task.id,\n  content: task.content,\n  date: String(input.date),\n  found: !!chosen,\n  due_datetime: chosen ? chosen.dt.toISO() : null,\n  time: chosen ? chosen.dt.toFormat('HH:mm') : null,\n  reason: chosen ? chosen.reason : 'sem horário livre entre ' + WORK_START + 'h e ' + WORK_END + 'h; só a data foi definida',\n  original_time: originalLabel,\n  busy: busy.map(b => b.s.toFormat('HH:mm') + '-' + b.e.toFormat('HH:mm') + ' ' + b.content),\n} }];"
+        }
+      },
+      {
+        "id": "39db1a14-f898-44ad-a844-fe6420d14d12",
+        "name": "Achou horário?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          880,
+          200
+        ],
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.found }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "80604a0c-316a-4e81-b84e-b00cd29c345c",
+        "name": "Todoist: gravar horário",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1100,
+          120
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $json.task_id }}",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ due_datetime: $json.due_datetime }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "id": "025668f8-2006-43fb-8840-4ca35389680b",
+        "name": "Resultado",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1320,
+          200
+        ],
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "language": "javaScript",
+          "jsCode": "const input = $('Entrada').first().json;\nconst plan = $('Escolher horário livre').first().json;\nlet saved = null;\ntry { saved = $('Todoist: gravar horário').first().json; } catch (e) { saved = null; }\nif (!saved) { try { saved = $('Todoist: gravar só a data').first().json; } catch (e) { saved = null; } }\nconst failed = !saved || !!saved.error;\nreturn [{ json: {\n  ok: !failed,\n  task_id: plan.task_id,\n  content: plan.content,\n  date: plan.date,\n  time: (!failed && plan.found) ? plan.time : null,\n  reason: failed ? ('Todoist: ' + ((saved && saved.error && saved.error.message) || 'erro')) : plan.reason,\n  original_time: plan.original_time,\n  due: (!failed && saved.due) ? saved.due : null,\n  echo: input.echo || {},\n} }];"
+        }
+      },
+      {
+        "id": "400b4f8d-3a68-4808-a799-5c0bed4b7fb0",
+        "name": "Todoist: gravar só a data",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1100,
+          320
+        ],
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $json.task_id }}",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ due_date: $json.date }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        }
+      }
+    ],
+    "connections": {
+      "Entrada": {
+        "main": [
+          [
+            {
+              "node": "Obter tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Obter tarefa": {
+        "main": [
+          [
+            {
+              "node": "Tarefas do dia",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tarefas do dia": {
+        "main": [
+          [
+            {
+              "node": "Escolher horário livre",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Escolher horário livre": {
+        "main": [
+          [
+            {
+              "node": "Achou horário?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Achou horário?": {
+        "main": [
+          [
+            {
+              "node": "Todoist: gravar horário",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Todoist: gravar só a data",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: gravar horário": {
+        "main": [
+          [
+            {
+              "node": "Resultado",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: gravar só a data": {
+        "main": [
+          [
+            {
+              "node": "Resultado",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true
+    },
+    "nodeGroups": [],
+    "pinData": null,
+    "tags": []
+  }
+]

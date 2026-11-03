@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "description": "Testes offline da lógica (nós Code) da Melhoria IA na Criação de Tarefas — Fluxo 1b e utilitários",
+  "scripts": {
+    "test": "node --test --test-name-pattern='.' *.test.js",
+    "avaliar": "node avaliacao.js"
+  },
+  "devDependencies": { "luxon": "3.5.0" }
+}

@@ -1,0 +1,629 @@
+[
+  {
+    "id": "ChrFluxo2Rotin01",
+    "name": "Chronos — Fluxo 2: Rotina Diária 9h20",
+    "description": "Todo dia às 9h20 busca Hoje/Atrasadas/Entrada no Todoist e os eventos do dia nas suas agendas do Google Calendar, pede 3 sugestões ao DeepSeek e envia um resumo consolidado com botões no Telegram.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Fluxo 2 — Rotina Diária das 9h20\n\nSchedule Trigger às 09:20 (no fuso de `CHRONOS_TIMEZONE`, que o compose repassa ao `GENERIC_TIMEZONE`). Para testar, clique em **Execute workflow**.\n\nTrês consultas em paralelo ao Todoist: filtro `today`, filtro `overdue` e tarefas do projeto Inbox (id resolvido em **Buscar projetos**). Quarta consulta em paralelo: **Google: listar agendas** → **Selecionar agendas** (todas as que você pode editar, ou só as de `CHRONOS_CALENDARS`; sem lista, usa a principal) → **Google: eventos de hoje** (uma chamada por agenda, hoje 00:00–24:00). O Merge espera as quatro terminarem; o resumo ganha o bloco 📅 Agenda de hoje e o DeepSeek considera o dia cheio ao sugerir.\n\nO resumo vai para `$env.TELEGRAM_CHAT_ID` — mande `/start` ao bot para descobrir o seu.",
+          "color": 4
+        },
+        "id": "6f526ad6-67a2-4571-b0b2-ee9968cc15d5",
+        "name": "Sticky Note b1ffa94d",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          112,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "content": "## Sugestões + mensagem consolidada (Fase 9)\n\n**Preparar contexto** normaliza as 3 listas e monta o prompt com id + título das tarefas da Entrada.\n\nDeepSeek só é chamado se a Entrada tiver tarefas; devolve `{\"suggestions\":[{id,title,reason}]}`. Ids inválidos são descartados; se a resposta falhar, caem as 3 primeiras da Entrada.\n\n**Montar resumo** gera o HTML (blocos Hoje / Atrasadas / Sugestões) e o teclado inline: `done:<id>`, `snooze:<id>`, `today:<id>` — tratados pelo Fluxo 1.",
+          "color": 5
+        },
+        "id": "ebd0beaf-bb25-487c-88b8-1bb111266578",
+        "name": "Sticky Note 7ab5ddf3",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          112,
+          560
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.todoist.com/api/v1/projects",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "76b01761-d453-4756-a8b0-7fca2f57c089",
+        "name": "Buscar projetos",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          224,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.todoist.com/api/v1/tasks/filter",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "today"
+              },
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "22d04cdb-b659-47c2-a37c-4e1615acafb7",
+        "name": "Tarefas de hoje",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          464,
+          128
+        ]
+      },
+      {
+        "parameters": {
+          "numberInputs": 4
+        },
+        "id": "8805f891-44b5-4af0-b649-dea5e206f28f",
+        "name": "Aguardar as 4 consultas",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          704,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.todoist.com/api/v1/tasks/filter",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "query",
+                "value": "today | overdue"
+              },
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "e9bad8b2-f06c-4363-b082-fa275c2d26dc",
+        "name": "Tarefas atrasadas",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          464,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://api.todoist.com/api/v1/tasks",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "project_id",
+                "value": "={{ ($json.results || []).find(p => p.inbox_project)?.id ?? \"\" }}"
+              },
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "0a0a68c4-2c7f-4a38-9e73-2b12377760e1",
+        "name": "Tarefas da Entrada",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          464,
+          480
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "// Fuso e idioma configuráveis no .env (CHRONOS_TIMEZONE / CHRONOS_LOCALE)\nconst ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo';\nconst LOCALE = $env.CHRONOS_LOCALE || 'pt-BR';\nconst projects = {};\nfor (const p of ($('Buscar projetos').first().json.results || [])) projects[p.id] = p.inbox_project ? 'Entrada' : p.name;\n\nconst localDue = (due) => {\n  if (!due || !due.date) return null;\n  const raw = String(due.date);\n  if (!raw.includes('T')) return raw;\n  return DateTime.fromISO(raw, { zone: ZONE }).toFormat(\"yyyy-MM-dd'T'HH:mm:ss\");\n};\n\nconst rawList = (nodeName) => {\n  try { return $(nodeName).first().json.results || []; } catch (e) { return []; }\n};\n\n// \"Tarefas de hoje\" (query today) e \"Tarefas atrasadas\" (query today | overdue, para pegar\n// também tarefas de hoje com hora já vencida) se sobrepõem. Junta por id e reclassifica\n// localmente comparando com o horário atual no fuso configurado (CHRONOS_TIMEZONE) — nunca confia na noção\n// de \"hoje\"/\"atrasado\" do próprio filtro do Todoist, que não é confiável para o fuso do usuário.\nconst merged = new Map();\nfor (const t of [...rawList('Tarefas de hoje'), ...rawList('Tarefas atrasadas')]) {\n  if (!t.checked && !t.is_deleted) merged.set(t.id, t);\n}\n\nconst nowSP = $now.setZone(ZONE);\nconst todaySP = nowSP.toFormat('yyyy-MM-dd');\n\nconst toEntry = (t) => ({\n  id: t.id,\n  content: t.content,\n  project: projects[t.project_id] || 'Entrada',\n  priority: t.priority || 1,\n  due: localDue(t.due),\n});\nconst sortFn = (a, b) => (b.priority - a.priority) || String(a.due || '').localeCompare(String(b.due || ''));\n\nconst today = [];\nconst overdue = [];\nfor (const t of merged.values()) {\n  const raw = t.due && t.due.date ? String(t.due.date) : null;\n  if (!raw) continue;\n  const hasTime = raw.includes('T');\n  // DateTime.fromISO(raw, { zone: ZONE }): se raw tem 'Z'/offset, parseia o instante absoluto\n  // e converte para ZONE; se raw é \"flutuante\" (sem timezone, como o Todoist devolve quando\n  // due.timezone é null), interpreta o horário como já sendo em ZONE — os dois formatos reais\n  // que a API do Todoist retorna.\n  const dueSP = DateTime.fromISO(raw, { zone: ZONE });\n  const dueDateSP = dueSP.toFormat('yyyy-MM-dd');\n\n  if (dueDateSP > todaySP) continue; // futuro (não deveria vir das queries, ignora por segurança)\n  const isOverdue = dueDateSP < todaySP || (hasTime && dueSP < nowSP);\n  (isOverdue ? overdue : today).push(toEntry(t));\n}\ntoday.sort(sortFn);\noverdue.sort(sortFn);\n\nconst todayIds = new Set(today.map(t => t.id));\nconst overdueIds = new Set(overdue.map(t => t.id));\nconst inbox = rawList('Tarefas da Entrada')\n  .filter(t => !t.checked && !t.is_deleted)\n  .map(toEntry)\n  .sort(sortFn)\n  .filter(t => !todayIds.has(t.id) && !overdueIds.has(t.id));\n\n// Agenda do Google Calendar (hoje) — uma resposta por agenda, pareada com 'Selecionar agendas'\nlet events = [];\nlet calendar_error = null; // falha ao consultar eventos\nlet calendar_note = null;  // listagem falhou → só a agenda principal\ntry {\n  const sel = $('Selecionar agendas').all();\n  const res = $('Google: eventos de hoje').all();\n  if (sel[0] && sel[0].json.list_error) calendar_note = sel[0].json.list_error;\n  res.forEach((it, i) => {\n    const r = it.json || {};\n    const label = (sel[i] && sel[i].json.calendar_label) || r.summary || 'Agenda';\n    if (r.error) { calendar_error = calendar_error || String(r.error.message || r.error).slice(0, 160); return; }\n    for (const e of (r.items || [])) {\n      if (!e || e.status === 'cancelled') continue;\n      const allDay = !!(e.start && e.start.date);\n      const s = allDay ? null : DateTime.fromISO(e.start.dateTime).setZone(ZONE);\n      const en = allDay || !e.end ? null : DateTime.fromISO(e.end.dateTime).setZone(ZONE);\n      events.push({\n        title: e.summary || '(sem título)',\n        calendar: label,\n        all_day: allDay,\n        start: s ? s.toFormat('HH:mm') : null,\n        end: en ? en.toFormat('HH:mm') : null,\n        sort: s ? s.toMillis() : 0,\n        location: e.location || null,\n        link: e.htmlLink || null,\n      });\n    }\n  });\n} catch (e) { calendar_error = calendar_error || 'nós do Google Calendar não executaram'; }\nevents.sort((a, b) => a.sort - b.sort);\nconst agendaTxt = events.length\n  ? events.map(e => (e.all_day ? 'dia inteiro' : e.start + '–' + e.end) + ' ' + e.title).join('; ')\n  : 'nenhum compromisso';\n\nconst now = nowSP.setLocale(LOCALE);\nconst inboxList = inbox.slice(0, 40).map(t => '- id=' + t.id + ' | ' + t.content + (t.due ? ' (prazo ' + t.due + ')' : '')).join('\\n');\n\nconst system = [\n  'Você é o Chronos, um assistente de produtividade. O usuário tem tarefas soltas na Entrada (Inbox) do Todoist.',\n  'Escolha as 3 tarefas mais simples e executáveis para o usuário fazer HOJE, priorizando: (1) as que têm prazo próximo ou vencido, (2) as que podem ser resolvidas em poucos minutos, (3) as que destravam outras coisas.',\n  'Responda SOMENTE com JSON válido neste formato: {\"suggestions\": [{\"id\": \"id exato da tarefa\", \"title\": \"título curto\", \"reason\": \"motivo em até 10 palavras\"}]}',\n  'Use exatamente os ids fornecidos. Se houver menos de 3 tarefas, sugira todas. Nunca invente tarefas.',\n  '',\n  'Hoje é ' + now.toFormat('cccc, dd/MM/yyyy') + '. O usuário já tem ' + today.length + ' tarefa(s) para hoje e ' + overdue.length + ' atrasada(s).',\n  'Agenda de hoje no Google Calendar: ' + agendaTxt + '. Se o dia estiver cheio de compromissos, prefira tarefas curtas.',\n  '',\n  'EXEMPLO DE SAÍDA JSON: {\"suggestions\":[{\"id\":\"abc123\",\"title\":\"Ligar para o dentista\",\"reason\":\"rápida e destrava a consulta\"}]}',\n].join('\\n');\n\nreturn [{ json: {\n  today, overdue, inbox, events, calendar_error, calendar_note,\n  has_inbox: inbox.length > 0,\n  system,\n  user: 'Tarefas na Entrada:\\n' + inboxList,\n  date_label: now.toFormat('cccc, dd/MM'),\n} }];\n"
+        },
+        "id": "5a4b0eb4-b521-4ee3-92eb-a4f46f4c0f30",
+        "name": "Preparar contexto",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          928,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 1
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.has_inbox }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "13090817-e52c-41a0-9590-ab4d1a5b8fbc",
+        "name": "Entrada tem tarefas?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1152,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: \"deepseek-flash\", thinking: { type: \"disabled\" }, temperature: 0, max_tokens: 600, response_format: { type: \"json_object\" }, messages: [{ role: \"system\", content: $json.system }, { role: \"user\", content: $json.user }] }) }}",
+          "options": {
+            "timeout": 60000
+          }
+        },
+        "id": "680aeda2-a48d-43b5-b1ff-fa42a0606342",
+        "name": "DeepSeek: sugerir 3 tarefas",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1392,
+          208
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst ctx = $('Preparar contexto').first().json;\nconst prio = (p) => ({ 4: '🔴 ', 3: '🟠 ', 2: '🔵 ' })[p] || '';\nconst ddmm = (iso) => iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '';\nconst hhmm = (iso) => iso && iso.includes('T') ? ' às ' + iso.slice(11, 16) : '';\n\nlet suggestions = [];\ntry {\n  const raw = $('DeepSeek: sugerir 3 tarefas').first().json.choices[0].message.content;\n  const parsed = JSON.parse(raw);\n  const byId = {};\n  for (const t of ctx.inbox) byId[t.id] = t;\n  suggestions = (parsed.suggestions || [])\n    .filter(s => s && byId[s.id])\n    .slice(0, 3)\n    .map(s => ({ id: s.id, title: byId[s.id].content, reason: s.reason || '' }));\n} catch (e) { suggestions = []; }\nif (suggestions.length === 0 && ctx.inbox.length > 0) {\n  suggestions = ctx.inbox.slice(0, 3).map(t => ({ id: t.id, title: t.content, reason: 'primeiras da Entrada' }));\n}\n\nconst MAX = 6;\nconst today = ctx.today.slice(0, MAX);\nconst overdue = ctx.overdue.slice(0, MAX);\nlet n = 0;\nconst lines = ['☀️ <b>Bom dia! Resumo de ' + esc(ctx.date_label) + '</b>', ''];\nconst keyboard = [];\n\nconst events = ctx.events || [];\nconst MAX_EV = 8;\nlines.push('📅 <b>Agenda de hoje</b>' + (events.length ? ' (' + events.length + ')' : ''));\nif (events.length === 0 && ctx.calendar_error) lines.push('<i>Google Calendar indisponível: ' + esc(ctx.calendar_error) + '</i>');\nelse if (events.length === 0) lines.push('<i>Nenhum compromisso hoje</i>');\nif (ctx.calendar_note) lines.push('<i>(só a agenda principal — ' + esc(ctx.calendar_note) + ')</i>');\nfor (const e of events.slice(0, MAX_EV)) {\n  lines.push('• ' + (e.all_day ? 'Dia inteiro' : e.start + '–' + e.end) + ' ' + esc(e.title) + ' <i>#' + esc(e.calendar) + '</i>' + (e.location ? ' 📍 ' + esc(e.location) : ''));\n}\nif (events.length > MAX_EV) lines.push('<i>… e mais ' + (events.length - MAX_EV) + '</i>');\nlines.push('');\n\nlines.push('📌 <b>Tarefas de hoje</b> (' + ctx.today.length + ')');\nif (ctx.today.length === 0) lines.push('<i>Nenhuma tarefa para hoje 🎉</i>');\nfor (const t of today) {\n  n++;\n  lines.push(n + '. ' + prio(t.priority) + esc(t.content) + hhmm(t.due) + ' <i>#' + esc(t.project) + '</i>');\n  keyboard.push([\n    { text: n + ' ✅ Concluir', callback_data: 'done:' + t.id },\n    { text: n + ' ⏰ Amanhã', callback_data: 'snooze:' + t.id },\n  ]);\n}\nif (ctx.today.length > MAX) lines.push('<i>… e mais ' + (ctx.today.length - MAX) + '</i>');\nlines.push('');\n\nlines.push('⚠️ <b>Atrasadas</b> (' + ctx.overdue.length + ')');\nif (ctx.overdue.length === 0) lines.push('<i>Nada atrasado 👏</i>');\nfor (const t of overdue) {\n  n++;\n  lines.push(n + '. ' + prio(t.priority) + esc(t.content) + ' <i>#' + esc(t.project) + ' · desde ' + ddmm(t.due) + hhmm(t.due) + '</i>');\n  keyboard.push([\n    { text: n + ' ✅ Concluir', callback_data: 'done:' + t.id },\n    { text: n + ' ⏰ Hoje', callback_data: 'today:' + t.id },\n  ]);\n}\nif (ctx.overdue.length > MAX) lines.push('<i>… e mais ' + (ctx.overdue.length - MAX) + '</i>');\nlines.push('');\n\nlines.push('💡 <b>Sugestões da Entrada</b> (' + ctx.inbox.length + ' pendentes)');\nif (suggestions.length === 0) lines.push('<i>Entrada vazia — nada a sugerir.</i>');\nfor (const s of suggestions) {\n  n++;\n  lines.push(n + '. ' + esc(s.title) + (s.reason ? ' — <i>' + esc(s.reason) + '</i>' : ''));\n  keyboard.push([\n    { text: n + ' 📅 Fazer hoje', callback_data: 'today:' + s.id },\n    { text: n + ' ✅ Já fiz', callback_data: 'done:' + s.id },\n  ]);\n}\nlines.push('');\nlines.push('<i>Botões: ⏰ Hoje/Amanhã reagenda mantendo o horário ou no próximo livre. Mande /hoje para repetir este resumo.</i>');\n\nreturn [{ json: {\n  chat_id: $env.TELEGRAM_CHAT_ID,\n  text: lines.join('\\n'),\n  reply_markup: { inline_keyboard: keyboard },\n} }];"
+        },
+        "id": "48724187-fd42-411a-818f-f8f7b5091ec9",
+        "name": "Montar resumo",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1632,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, text: $json.text, parse_mode: \"HTML\", reply_markup: $json.reply_markup }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "9208810f-9a92-477c-8821-9f09d6724e3e",
+        "name": "Telegram: enviar resumo",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1872,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "cb9c0136-1241-40e5-847c-9677af80f05f",
+        "name": "Chamado por /hoje",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          528
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://www.googleapis.com/calendar/v3/users/me/calendarList",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleCalendarOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "minAccessRole",
+                "value": "writer"
+              },
+              {
+                "name": "maxResults",
+                "value": "250"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "b234517b-b09d-4c81-93d0-76f546cb0c32",
+        "name": "Google: listar agendas",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          464,
+          704
+        ],
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "__CREDENTIAL:googleCalendarOAuth2Api__",
+            "name": "Google Calendar account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// Opcional: CHRONOS_CALENDARS=\"Agenda A;Agenda B\" restringe as agendas consultadas; vazio = todas as que você pode editar.\nconst WANTED = String($env.CHRONOS_CALENDARS || '').split(';').map((s) => s.trim()).filter(Boolean);\nconst norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\\s*(&|\\be\\b|\\band\\b)\\s*/g, ' ').replace(/[^a-z0-9]/g, '');\nconst res = $json;\nconst fallback = (why) => [{ json: { calendar_id: 'primary', calendar_label: 'Agenda principal', list_error: why } }];\n\n// Sem a lista (ex.: escopo OAuth só de eventos → 403), consulta ao menos a agenda principal.\nif (res.error || !Array.isArray(res.items)) {\n  return fallback(res.error ? String(res.error.message || res.error).slice(0, 160) : 'resposta inesperada do calendarList');\n}\nconst wanted = new Set(WANTED.map(norm));\nconst out = res.items\n  .filter(c => !c.deleted && !c.hidden && (!wanted.size || wanted.has(norm(c.summaryOverride || c.summary)) || wanted.has(norm(c.summary))))\n  .map(c => ({ json: { calendar_id: c.id, calendar_label: c.summaryOverride || c.summary, list_error: null } }));\nreturn out.length ? out : fallback(wanted.size ? 'nenhuma das agendas de CHRONOS_CALENDARS encontrada no Google Calendar' : 'nenhuma agenda encontrada no Google Calendar');\n"
+        },
+        "id": "6593701b-9eb6-473d-8de8-e12793acf90b",
+        "name": "Selecionar agendas",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          640,
+          704
+        ]
+      },
+      {
+        "parameters": {
+          "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ encodeURIComponent($json.calendar_id) }}/events",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "googleCalendarOAuth2Api",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "timeMin",
+                "value": "={{ $now.setZone($env.CHRONOS_TIMEZONE || 'America/Sao_Paulo').startOf('day').toISO() }}"
+              },
+              {
+                "name": "timeMax",
+                "value": "={{ $now.setZone($env.CHRONOS_TIMEZONE || 'America/Sao_Paulo').startOf('day').plus({ days: 1 }).toISO() }}"
+              },
+              {
+                "name": "singleEvents",
+                "value": "true"
+              },
+              {
+                "name": "orderBy",
+                "value": "startTime"
+              },
+              {
+                "name": "maxResults",
+                "value": "50"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "f66c2961-8faa-4761-b639-bbb294c3af84",
+        "name": "Google: eventos de hoje",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          832,
+          704
+        ],
+        "credentials": {
+          "googleCalendarOAuth2Api": {
+            "id": "__CREDENTIAL:googleCalendarOAuth2Api__",
+            "name": "Google Calendar account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "triggerAtHour": 9,
+                "triggerAtMinute": 20
+              }
+            ]
+          }
+        },
+        "id": "703d5484-0aa7-43c2-aad1-586e45c4aad5",
+        "name": "Todo dia às 9h20",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.4,
+        "position": [
+          0,
+          304
+        ]
+      }
+    ],
+    "connections": {
+      "Buscar projetos": {
+        "main": [
+          [
+            {
+              "node": "Tarefas de hoje",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Tarefas atrasadas",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Tarefas da Entrada",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "Google: listar agendas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tarefas de hoje": {
+        "main": [
+          [
+            {
+              "node": "Aguardar as 4 consultas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tarefas atrasadas": {
+        "main": [
+          [
+            {
+              "node": "Aguardar as 4 consultas",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "Tarefas da Entrada": {
+        "main": [
+          [
+            {
+              "node": "Aguardar as 4 consultas",
+              "type": "main",
+              "index": 2
+            }
+          ]
+        ]
+      },
+      "Preparar contexto": {
+        "main": [
+          [
+            {
+              "node": "Entrada tem tarefas?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Entrada tem tarefas?": {
+        "main": [
+          [
+            {
+              "node": "DeepSeek: sugerir 3 tarefas",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Montar resumo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DeepSeek: sugerir 3 tarefas": {
+        "main": [
+          [
+            {
+              "node": "Montar resumo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar resumo": {
+        "main": [
+          [
+            {
+              "node": "Telegram: enviar resumo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Chamado por /hoje": {
+        "main": [
+          [
+            {
+              "node": "Buscar projetos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Aguardar as 4 consultas": {
+        "main": [
+          [
+            {
+              "node": "Preparar contexto",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google: listar agendas": {
+        "main": [
+          [
+            {
+              "node": "Selecionar agendas",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Selecionar agendas": {
+        "main": [
+          [
+            {
+              "node": "Google: eventos de hoje",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Google: eventos de hoje": {
+        "main": [
+          [
+            {
+              "node": "Aguardar as 4 consultas",
+              "type": "main",
+              "index": 3
+            }
+          ]
+        ]
+      },
+      "Todo dia às 9h20": {
+        "main": [
+          [
+            {
+              "node": "Buscar projetos",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "binaryMode": "separate"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]

@@ -1,0 +1,20 @@
+# Segredos e configuração local (o modelo versionado é o .env.example)
+.env
+.env.*
+!.env.example
+
+# Dados locais do n8n (caso use bind mount em vez de volume nomeado)
+n8n_data/
+
+# Dependências dos testes offline
+node_modules/
+
+# Backups e exports brutos (podem conter dados pessoais — passe por scripts/sanitizar-workflows.mjs)
+*.bundle
+*.raw.json
+
+# Sistema / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

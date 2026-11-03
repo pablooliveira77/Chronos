@@ -1,0 +1,1311 @@
+[
+  {
+    "id": "ChrFluxo3Edit001",
+    "name": "Chronos — Fluxo 3: Editar tarefa",
+    "description": "Sub-workflow do comando /edit <tarefa> | <ajuste>: acha a tarefa (Util: Buscar tarefa), pede ao DeepSeek só o diff dos campos e aplica no Todoist (update + move). Nome ambíguo → pergunta com botões.",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "content": "## Fluxo 3 — Editar tarefa (Melhoria 2)\n\n`/edit <nome da tarefa> | <o que mudar>`. Também é chamado pelo **Util: Pendências** com `edit_task_id` + `adjust` quando o nome era ambíguo e você escolheu no botão.\n\nO DeepSeek devolve **só o diff** (`content`, `description`, `due`, `priority`, `project`, `section`). Campos → `POST /tasks/{id}`; projeto/seção → `POST /tasks/{id}/move`. Não apaga nem conclui tarefas.",
+          "color": 4,
+          "width": 480,
+          "height": 260
+        },
+        "id": "ac601509-861a-478c-bf7b-a683db0284fd",
+        "name": "Nota: editar",
+        "type": "n8n-nodes-base.stickyNote",
+        "typeVersion": 1,
+        "position": [
+          -40,
+          -300
+        ]
+      },
+      {
+        "parameters": {
+          "inputSource": "passthrough"
+        },
+        "id": "796215f7-7c04-4d24-ad2a-2ecba22c65b7",
+        "name": "Recebe pedido",
+        "type": "n8n-nodes-base.executeWorkflowTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          0,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const u = $input.first().json;\nif (u.edit_task_id && u.adjust) {\n  return [{ json: { modo: 'direto', chat_id: u.chat_id, edit_task_id: u.edit_task_id, adjust: String(u.adjust) } }];\n}\nconst args = String(u.args || '').trim();\nconst i = args.indexOf('|');\nconst name = i >= 0 ? args.slice(0, i).trim() : '';\nconst adjust = i >= 0 ? args.slice(i + 1).trim() : '';\nif (!name || !adjust) return [{ json: { modo: 'uso', chat_id: u.chat_id, args } }];\nreturn [{ json: { modo: 'buscar', chat_id: u.chat_id, name, adjust } }];\n"
+        },
+        "id": "970221e6-575f-4d5b-8e92-42a3a91081fc",
+        "name": "Interpretar comando",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          220,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.modo }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "uso"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "uso"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.modo }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "buscar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "buscar"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.modo }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "direto"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "direto"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "none"
+          }
+        },
+        "id": "6732dbad-0e9d-4217-a1b4-858a7ded0916",
+        "name": "Modo?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          440,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, parse_mode: \"HTML\", text: \"✏️ <b>Como editar uma tarefa</b>\\n\\n<code>/edit &lt;nome da tarefa&gt; | &lt;o que mudar&gt;</code>\\n\\nExemplos:\\n• /edit Montar estante | mudar prazo pra sexta\\n• /edit Comprar leite | prioridade alta e mover para o projeto Casa\\n• /edit Revisar contrato | acrescentar na descrição: conferir cláusula 4\\n\\nO <b>|</b> separa o nome do ajuste.\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "3b561bea-1ed5-40f7-80b6-af541a62a87d",
+        "name": "Telegram: como usar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          680,
+          60
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "workflowId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__WF_ID:util-buscar-tarefa__"
+          },
+          "options": {
+            "waitForSubWorkflow": true
+          },
+          "mode": "each",
+          "workflowInputs": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "query": "={{ $json.name }}",
+              "project": ""
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "query",
+                "displayName": "query",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              },
+              {
+                "id": "project",
+                "displayName": "project",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "canBeUsedToMatch": true,
+                "type": "string"
+              }
+            ],
+            "attemptToConvertTypes": false,
+            "convertFieldsToString": false
+          }
+        },
+        "id": "08ae3448-bf70-45ff-9893-1d525d5263c7",
+        "name": "Util: buscar tarefa",
+        "type": "n8n-nodes-base.executeWorkflow",
+        "typeVersion": 1.3,
+        "position": [
+          680,
+          300
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };\nconst c = $('Interpretar comando').first().json;\nconst r = $input.first().json || {};\n\nif (r.status === 'one' && r.best) {\n  return [{ json: { decisao: 'editar', chat_id: c.chat_id, edit_task_id: r.best.id, adjust: c.adjust } }];\n}\nif (r.status === 'many' && (r.candidates || []).length) {\n  const pid = Math.random().toString(36).slice(2, 10);\n  const cands = r.candidates.slice(0, 5);\n  const lines = ['🔎 Achei ' + (cands.length === 1 ? 'uma tarefa parecida' : cands.length + ' tarefas parecidas') + ' com <b>“' + esc(c.name) + '”</b>. Qual delas devo editar?', ''];\n  cands.forEach((t, i) => lines.push((i + 1) + '. ' + esc(t.content) + ' <i>#' + esc(t.project) + (t.parent_content ? ' ↳ ' + esc(t.parent_content) : '') + '</i>'));\n  lines.push('', '✏️ <i>' + esc(c.adjust) + '</i>');\n  const keyboard = cands.map((t, i) => [{ text: (i + 1) + '. ' + cut(t.content, 40), callback_data: 'pk:' + pid + ':' + i }]);\n  keyboard.push([{ text: '✖️ Cancelar', callback_data: 'pk:' + pid + ':x' }]);\n  const payload = { adjust: c.adjust, name: c.name, candidates: cands.map(t => ({ id: t.id, content: t.content, project: t.project })) };\n  return [{ json: {\n    decisao: 'perguntar', pid, chat_id: c.chat_id, payload: JSON.stringify(payload),\n    tg: { chat_id: c.chat_id, text: lines.join('\\n'), parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } },\n  } }];\n}\nconst why = r.status ? '' : '\\n<i>(falha ao consultar o Todoist)</i>';\nreturn [{ json: { decisao: 'nenhuma', chat_id: c.chat_id, tg: { chat_id: c.chat_id, parse_mode: 'HTML',\n  text: '🔎 Não encontrei nenhuma tarefa aberta chamada <b>“' + esc(c.name) + '”</b>. Nada foi alterado.' + why + '\\n\\nConfira o nome e tente de novo: <code>/edit &lt;nome&gt; | &lt;ajuste&gt;</code>' } } }];\n"
+        },
+        "id": "eece7f58-d0a7-4bec-b36f-7c5565e16764",
+        "name": "Decidir alvo",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          900,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "rules": {
+            "values": [
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.decisao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "editar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "editar"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.decisao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "perguntar"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "perguntar"
+              },
+              {
+                "conditions": {
+                  "options": {
+                    "caseSensitive": true,
+                    "leftValue": "",
+                    "typeValidation": "strict",
+                    "version": 1
+                  },
+                  "combinator": "and",
+                  "conditions": [
+                    {
+                      "leftValue": "={{ $json.decisao }}",
+                      "operator": {
+                        "type": "string",
+                        "operation": "equals"
+                      },
+                      "rightValue": "nenhuma"
+                    }
+                  ]
+                },
+                "renameOutput": true,
+                "outputKey": "nenhuma"
+              }
+            ]
+          },
+          "options": {
+            "fallbackOutput": "none"
+          }
+        },
+        "id": "5e4c4840-83a4-4319-a65e-a2c2546dbb97",
+        "name": "Achou a tarefa?",
+        "type": "n8n-nodes-base.switch",
+        "typeVersion": 3.4,
+        "position": [
+          1120,
+          300
+        ]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "insert",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "pid": "={{ $json.pid }}",
+              "chat_id": "={{ String($json.chat_id) }}",
+              "tipo": "edicao",
+              "status": "aberta",
+              "payload": "={{ $json.payload }}",
+              "criado_ms": "={{ Date.now() }}",
+              "message_id": 0
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "pid",
+                "displayName": "pid",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "chat_id",
+                "displayName": "chat_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "tipo",
+                "displayName": "tipo",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "status",
+                "displayName": "status",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "payload",
+                "displayName": "payload",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "string",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "criado_ms",
+                "displayName": "criado_ms",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              },
+              {
+                "id": "message_id",
+                "displayName": "message_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          }
+        },
+        "id": "60e6a377-b059-4f5f-bf7b-f756c92b12da",
+        "name": "Salvar pendência",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1360,
+          440
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($(\"Decidir alvo\").first().json.tg) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "1873370d-319f-44cd-890e-4ec904e4fda9",
+        "name": "Telegram: perguntar qual",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1580,
+          440
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "dataTableId": {
+            "__rl": true,
+            "mode": "id",
+            "value": "__DATATABLE:chronos_pendencias__"
+          },
+          "columns": {
+            "mappingMode": "defineBelow",
+            "value": {
+              "message_id": "={{ $json.result ? $json.result.message_id : 0 }}"
+            },
+            "matchingColumns": [],
+            "schema": [
+              {
+                "id": "message_id",
+                "displayName": "message_id",
+                "required": false,
+                "defaultMatch": false,
+                "display": true,
+                "type": "number",
+                "canBeUsedToMatch": true
+              }
+            ]
+          },
+          "matchType": "allConditions",
+          "filters": {
+            "conditions": [
+              {
+                "keyName": "pid",
+                "condition": "eq",
+                "keyValue": "={{ $('Decidir alvo').first().json.pid }}"
+              }
+            ]
+          }
+        },
+        "id": "3a8c10da-65d4-4d8c-b58a-cfaeb5884ad4",
+        "name": "Guardar message_id",
+        "type": "n8n-nodes-base.dataTable",
+        "typeVersion": 1.1,
+        "position": [
+          1800,
+          440
+        ],
+        "alwaysOutputData": true
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.tg) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "ca55c41e-c267-4c50-aec4-9f8eee99579b",
+        "name": "Telegram: não encontrei",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1360,
+          620
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const j = $input.first().json;\nreturn [{ json: { chat_id: j.chat_id, edit_task_id: j.edit_task_id, adjust: j.adjust } }];\n"
+        },
+        "id": "3f13963e-a21c-4366-9e17-f2429f5ad225",
+        "name": "Alvo da edição",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1360,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $json.edit_task_id }}",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "17197fb5-1beb-4a75-af31-57226df00692",
+        "name": "Obter tarefa",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1580,
+          160
+        ],
+        "onError": "continueRegularOutput",
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ !!($json.id && !$json.checked && !$json.is_deleted) }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "27658c82-c8d5-470b-8b05-29c0ca6b06c8",
+        "name": "Tarefa existe?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          1800,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Alvo da edição\").first().json.chat_id, parse_mode: \"HTML\", text: \"⚠️ Não consegui abrir essa tarefa no Todoist (foi concluída ou apagada?). Nada foi alterado.\" + ($json.error && $json.error.message ? \"\\n<i>\" + String($json.error.message).slice(0, 200) + \"</i>\" : \"\") }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "f82354a9-d944-425f-bb83-a7eeda01aed6",
+        "name": "Telegram: tarefa sumiu",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2020,
+          320
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://api.todoist.com/api/v1/projects",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "a3e62e76-d5ff-4de3-b088-5ffe8a192d9b",
+        "name": "Buscar projetos",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2020,
+          100
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://api.todoist.com/api/v1/sections",
+          "sendQuery": true,
+          "specifyQuery": "keypair",
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "limit",
+                "value": "200"
+              }
+            ]
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "30adb23a-5727-404b-835a-3e4ecd3c5e90",
+        "name": "Buscar seções",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2240,
+          100
+        ],
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000
+      },
+      {
+        "parameters": {
+          "jsCode": "const squash = (v) => String(v || '').replace(/\\s+/g, ' ').trim();\nconst alvo = $('Alvo da edição').first().json;\nconst task = $('Obter tarefa').first().json;\nconst rawSections = ($input.first().json.results || []).filter(s => !s.is_archived && !s.is_deleted);\nconst projects = ($('Buscar projetos').first().json.results || [])\n  .filter(p => !p.is_archived && !p.is_deleted)\n  .map(p => ({\n    id: p.id,\n    name: p.inbox_project ? 'Entrada' : p.name,\n    description: squash(p.description),\n    inbox: !!p.inbox_project,\n    sections: rawSections.filter(s => s.project_id === p.id).map(s => ({ id: s.id, name: s.name })),\n  }));\nconst catalog = projects.map(p => '- \"' + p.name + '\"' + (p.description ? ': ' + p.description : '') + (p.sections.length ? ' | seções: ' + p.sections.map(s => '\"' + s.name + '\"').join(', ') : '')).join('\\n');\nconst proj = projects.find(p => p.id === task.project_id) || null;\nconst sec = proj ? proj.sections.find(s => s.id === task.section_id) || null : null;\nconst current = {\n  titulo: task.content,\n  descricao: task.description || '',\n  prazo: task.due ? (task.due.string || task.due.date) : null,\n  prazo_data: task.due ? task.due.date : null,\n  prioridade: 5 - (task.priority || 1),\n  projeto: proj ? proj.name : '?',\n  secao: sec ? sec.name : null,\n};\n// Fuso e idioma configuráveis no .env (CHRONOS_TIMEZONE / CHRONOS_LOCALE)\nconst TZ = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo';\nconst LOCALE = $env.CHRONOS_LOCALE || 'pt-BR';\nconst now = $now.setZone(TZ).setLocale(LOCALE);\n\nconst system = [\n  'Você é o Chronos. O usuário quer ALTERAR uma tarefa que já existe no Todoist. Responda SOMENTE com um objeto JSON válido, sem texto extra, neste formato:',\n  '{\"changes\": {\"content\": \"string\", \"description\": \"string\", \"due\": \"string\", \"priority\": 1 | 2 | 3 | 4, \"project\": \"string\", \"section\": \"string\"}, \"summary\": \"string\"}',\n  '',\n  'Regras:',\n  '- Em \"changes\" coloque APENAS os campos que o pedido manda mudar. Nunca repita valores atuais nem inclua campos que não foram pedidos.',\n  '- \"content\": novo título curto (até 6 palavras, no imperativo).',\n  '- \"description\": a descrição COMPLETA nova. Se o pedido for acrescentar algo, junte ao texto atual; se for trocar, substitua; \"\" para apagar a descrição.',\n  '- \"due\": novo prazo em linguagem natural em português, como o usuário diria (\"sexta\", \"amanhã às 15h\", \"dia 20\", \"toda segunda\"). Para remover o prazo, use exatamente \"sem prazo\".',\n  '- \"priority\": 1 = urgente, 2 = alta, 3 = média, 4 = normal.',\n  '- \"project\": EXATAMENTE um nome do catálogo abaixo (\"Entrada\" para a caixa de entrada). \"section\": nome EXATO de uma seção desse projeto, ou \"\" para tirar da seção.',\n  '- \"summary\": frase curta em português descrevendo a mudança (ex.: \"prazo movido para sexta\").',\n  '- Se o pedido não for uma alteração possível desses campos (ex.: apagar ou concluir a tarefa), devolva {\"changes\": {}, \"summary\": \"<motivo curto>\"}.',\n  '',\n  'Catálogo de projetos do Todoist:',\n  catalog,\n  '',\n  'Data e hora atual: ' + now.toFormat(\"cccc, dd/MM/yyyy HH:mm\") + ' (' + TZ + ').',\n  '',\n  'Tarefa atual: ' + JSON.stringify(current),\n  '',\n  'EXEMPLO DE PEDIDO: \"mudar prazo pra sexta e deixar urgente\"',\n  'EXEMPLO DE SAÍDA JSON: {\"changes\":{\"due\":\"sexta\",\"priority\":1},\"summary\":\"prazo movido para sexta e prioridade urgente\"}',\n].join('\\n');\n\nreturn [{ json: { system, user: alvo.adjust, chat_id: alvo.chat_id, task, projects, current } }];\n"
+        },
+        "id": "e8aa50c7-79a5-49e3-bdbb-abea97bda6f6",
+        "name": "Montar prompt de edição",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2460,
+          100
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/chat/completions",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ model: \"deepseek-flash\", thinking: { type: \"disabled\" }, temperature: 0, max_tokens: 800, response_format: { type: \"json_object\" }, messages: [{ role: \"system\", content: $json.system }, { role: \"user\", content: $json.user }] }) }}",
+          "options": {
+            "timeout": 60000
+          },
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.DEEPSEEK_API_KEY }}"
+              }
+            ]
+          }
+        },
+        "id": "d7b52677-ae09-4629-9fbe-c78507ee21b9",
+        "name": "DeepSeek: calcular ajuste",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2680,
+          100
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n// Fuso e idioma configuráveis no .env; o Todoist recebe só o idioma (pt-BR → pt)\nconst ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo';\nconst LOCALE = $env.CHRONOS_LOCALE || 'pt-BR';\nconst DUE_LANG = LOCALE.split('-')[0];\nconst ctx = $('Montar prompt de edição').first().json;\nconst task = ctx.task;\nconst projects = ctx.projects || [];\nconst base = { chat_id: ctx.chat_id, task_id: task.id, title: task.content };\nconst fmtDue = (due) => {\n  if (!due || !due.date) return 'sem prazo';\n  const d = String(due.date);\n  const dt = DateTime.fromISO(d, { zone: ZONE }).setLocale(LOCALE);\n  if (!dt.isValid) return d;\n  return d.includes('T') ? dt.toFormat(\"ccc dd/MM 'às' HH:mm\") : dt.toFormat('ccc dd/MM');\n};\n\nif ($json.error) {\n  return [{ json: { ...base, ok: false, has_changes: false, motivo: 'DeepSeek indisponível: ' + String($json.error.message || '').slice(0, 200) } }];\n}\nlet parsed = null;\ntry { parsed = JSON.parse($json.choices[0].message.content || ''); } catch (e) { parsed = null; }\nif (!parsed || typeof parsed !== 'object') {\n  return [{ json: { ...base, ok: false, has_changes: false, motivo: 'DeepSeek não retornou JSON válido' } }];\n}\nconst ch = parsed.changes && typeof parsed.changes === 'object' ? parsed.changes : {};\nconst summary = String(parsed.summary || '').trim();\nconst label = { 1: '🔴 urgente', 2: '🟠 alta', 3: '🔵 média', 4: '⚪ normal' };\nconst has = (k) => Object.prototype.hasOwnProperty.call(ch, k) && ch[k] !== null && ch[k] !== undefined;\n\nconst update = {};\nconst move = {};\nconst lines = [];\nconst avisos = [];\nlet due_changed = false;\n\nif (has('content') && String(ch.content).trim() && String(ch.content).trim() !== task.content) {\n  update.content = String(ch.content).trim();\n  lines.push('📝 Título: ' + esc(task.content) + ' → <b>' + esc(update.content) + '</b>');\n}\nif (has('description') && String(ch.description).trim() !== String(task.description || '').trim()) {\n  update.description = String(ch.description).trim();\n  lines.push(update.description ? '🗒 Descrição atualizada' : '🗒 Descrição removida');\n}\nif (has('due') && String(ch.due).trim()) {\n  const d = String(ch.due).trim();\n  if (/^(sem prazo|sem data|no date|remover( o)? prazo|nenhum)$/i.test(d)) update.due_string = 'no date';\n  else { update.due_string = d; update.due_lang = DUE_LANG; }\n  due_changed = true;\n}\nif (has('priority')) {\n  const p = parseInt(ch.priority, 10);\n  if (p >= 1 && p <= 4 && 5 - p !== task.priority) {\n    update.priority = 5 - p;\n    lines.push('⚑ Prioridade: ' + label[5 - (task.priority || 1)] + ' → <b>' + label[p] + '</b>');\n  }\n}\n\n// projeto / seção → endpoint de move (aceita um destino por vez)\nconst nrm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();\nconst current = projects.find(p => p.id === task.project_id) || null;\nlet target = current;\nif (has('project') && String(ch.project).trim()) {\n  const want = nrm(ch.project);\n  const alias = ['entrada', 'inbox', 'caixa de entrada'].includes(want);\n  const found = alias ? projects.find(p => p.inbox) : projects.find(p => nrm(p.name) === want);\n  if (!found) avisos.push('projeto \"' + esc(ch.project) + '\" não existe — mantido em ' + esc(current ? current.name : '?'));\n  else if (found.id !== task.project_id) {\n    target = found;\n    move.project_id = found.id;\n    lines.push('📁 Projeto: ' + esc(current ? current.name : '?') + ' → <b>' + esc(found.name) + '</b>');\n  }\n}\nif (has('section') && target) {\n  const want = nrm(ch.section);\n  if (!want) {\n    if (task.section_id && !move.project_id) { move.project_id = target.id; lines.push('📂 Seção removida'); }\n  } else {\n    const sec = (target.sections || []).find(s => nrm(s.name) === want);\n    if (!sec) avisos.push('seção \"' + esc(ch.section) + '\" não existe em ' + esc(target.name));\n    else if (sec.id !== task.section_id) {\n      delete move.project_id;\n      move.section_id = sec.id;\n      lines.push('📂 Seção: <b>' + esc(sec.name) + '</b>');\n    }\n  }\n}\n\nconst has_update = Object.keys(update).length > 0;\nconst has_move = Object.keys(move).length > 0;\nreturn [{ json: {\n  ...base, ok: true, has_changes: has_update || has_move, has_update, has_move,\n  update_body: update, move_body: move, lines, avisos, summary, due_changed, old_due: fmtDue(task.due),\n  motivo: summary || 'o pedido não altera nenhum campo',\n} }];\n"
+        },
+        "id": "de608b5f-dc69-4d5d-8a74-07c671a0697f",
+        "name": "Interpretar ajuste",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2900,
+          100
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.has_changes }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "0415da91-b6d2-49ad-9af2-fd3d0e0bbfb7",
+        "name": "Tem mudanças?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3120,
+          100
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $json.chat_id, parse_mode: \"HTML\", text: \"🤷 Não alterei <b>\" + String($json.title).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\") + \"</b>: \" + String($json.motivo).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\") + (($json.avisos || []).length ? \"\\n<i>\" + $json.avisos.join(\"; \") + \"</i>\" : \"\") + \"\\n\\nCampos editáveis: título, descrição, prazo, prioridade, projeto e seção.\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "8bb99a57-b4fc-4985-8350-573b211adbb8",
+        "name": "Telegram: nada a mudar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3340,
+          280
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $json.has_update }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "96797326-db36-4cfe-a1c1-0c184f616f89",
+        "name": "Precisa atualizar?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3340,
+          60
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $json.task_id }}",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.update_body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "fef4e348-5894-4b96-b271-c56e59c2bfa1",
+        "name": "Todoist: atualizar",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          3560,
+          -20
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "loose",
+              "version": 2
+            },
+            "combinator": "and",
+            "conditions": [
+              {
+                "leftValue": "={{ $('Interpretar ajuste').first().json.has_move }}",
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                },
+                "rightValue": ""
+              }
+            ]
+          },
+          "looseTypeValidation": true,
+          "options": {}
+        },
+        "id": "4d18d0b6-5c04-42ce-8f12-6a5287afed2b",
+        "name": "Precisa mover?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.3,
+        "position": [
+          3780,
+          60
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.todoist.com/api/v1/tasks/{{ $('Interpretar ajuste').first().json.task_id }}/move",
+          "sendHeaders": true,
+          "specifyHeaders": "keypair",
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "=Bearer {{ $env.TODOIST_API_TOKEN }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Interpretar ajuste').first().json.move_body) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "fc1ccb11-71cb-4015-8799-9a3fa40e59da",
+        "name": "Todoist: mover",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          4000,
+          -20
+        ],
+        "onError": "continueErrorOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ chat_id: $(\"Interpretar ajuste\").first().json.chat_id, parse_mode: \"HTML\", text: \"⚠️ O Todoist recusou a alteração de <b>\" + String($(\"Interpretar ajuste\").first().json.title).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\") + \"</b>.\\n<i>\" + String(($json.error && $json.error.message) || \"erro desconhecido\").slice(0, 300).replace(/</g, \"&lt;\") + \"</i>\" }) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "53973cbd-8b00-44b3-861b-7b289cb1608a",
+        "name": "Telegram: erro na edição",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          4220,
+          240
+        ],
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\nconst ZONE = $env.CHRONOS_TIMEZONE || 'America/Sao_Paulo';\nconst LOCALE = $env.CHRONOS_LOCALE || 'pt-BR';\nconst a = $('Interpretar ajuste').first().json;\nlet upd = null;\ntry { upd = $('Todoist: atualizar').first().json; } catch (e) { upd = null; }\nconst fmtDue = (due) => {\n  if (!due || !due.date) return 'sem prazo';\n  const d = String(due.date);\n  const dt = DateTime.fromISO(d, { zone: ZONE }).setLocale(LOCALE);\n  if (!dt.isValid) return d;\n  return d.includes('T') ? dt.toFormat(\"ccc dd/MM 'às' HH:mm\") : dt.toFormat('ccc dd/MM');\n};\nconst lines = [...a.lines];\nif (a.due_changed) lines.push('📅 Prazo: ' + esc(a.old_due) + ' → <b>' + esc(upd && upd.id ? fmtDue(upd.due) : '?') + '</b>');\nconst title = (upd && upd.content) || a.title;\nconst text = [\n  '✅ <b>' + esc(title) + '</b> atualizada' + (a.summary ? ' — ' + esc(a.summary) : ''),\n  '',\n  ...lines.map(l => '• ' + l),\n  (a.avisos || []).length ? '\\n<i>' + a.avisos.join('; ') + '</i>' : null,\n].filter(l => l !== null).join('\\n');\nreturn [{ json: { tg: { chat_id: a.chat_id, text, parse_mode: 'HTML' } } }];\n"
+        },
+        "id": "825133bb-8efd-4818-a4f0-7823a0c88aff",
+        "name": "Montar confirmação",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          4220,
+          60
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+          "sendBody": true,
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.tg) }}",
+          "options": {
+            "timeout": 15000
+          }
+        },
+        "id": "7f4583ec-4583-45ab-baf7-c65dd65e8cf8",
+        "name": "Telegram: confirmar edição",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          4440,
+          60
+        ],
+        "onError": "continueRegularOutput"
+      }
+    ],
+    "connections": {
+      "Recebe pedido": {
+        "main": [
+          [
+            {
+              "node": "Interpretar comando",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Interpretar comando": {
+        "main": [
+          [
+            {
+              "node": "Modo?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Modo?": {
+        "main": [
+          [
+            {
+              "node": "Telegram: como usar",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Util: buscar tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Alvo da edição",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Util: buscar tarefa": {
+        "main": [
+          [
+            {
+              "node": "Decidir alvo",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Decidir alvo": {
+        "main": [
+          [
+            {
+              "node": "Achou a tarefa?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Achou a tarefa?": {
+        "main": [
+          [
+            {
+              "node": "Alvo da edição",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Salvar pendência",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: não encontrei",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Salvar pendência": {
+        "main": [
+          [
+            {
+              "node": "Telegram: perguntar qual",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Telegram: perguntar qual": {
+        "main": [
+          [
+            {
+              "node": "Guardar message_id",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Alvo da edição": {
+        "main": [
+          [
+            {
+              "node": "Obter tarefa",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Obter tarefa": {
+        "main": [
+          [
+            {
+              "node": "Tarefa existe?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tarefa existe?": {
+        "main": [
+          [
+            {
+              "node": "Buscar projetos",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: tarefa sumiu",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar projetos": {
+        "main": [
+          [
+            {
+              "node": "Buscar seções",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Buscar seções": {
+        "main": [
+          [
+            {
+              "node": "Montar prompt de edição",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar prompt de edição": {
+        "main": [
+          [
+            {
+              "node": "DeepSeek: calcular ajuste",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DeepSeek: calcular ajuste": {
+        "main": [
+          [
+            {
+              "node": "Interpretar ajuste",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Interpretar ajuste": {
+        "main": [
+          [
+            {
+              "node": "Tem mudanças?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Tem mudanças?": {
+        "main": [
+          [
+            {
+              "node": "Precisa atualizar?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: nada a mudar",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Precisa atualizar?": {
+        "main": [
+          [
+            {
+              "node": "Todoist: atualizar",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Precisa mover?",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: atualizar": {
+        "main": [
+          [
+            {
+              "node": "Precisa mover?",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: erro na edição",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Precisa mover?": {
+        "main": [
+          [
+            {
+              "node": "Todoist: mover",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Montar confirmação",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Todoist: mover": {
+        "main": [
+          [
+            {
+              "node": "Montar confirmação",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Telegram: erro na edição",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Montar confirmação": {
+        "main": [
+          [
+            {
+              "node": "Telegram: confirmar edição",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1",
+      "availableInMCP": true,
+      "callerPolicy": "workflowsFromSameOwner"
+    },
+    "nodeGroups": [],
+    "pinData": {},
+    "tags": []
+  }
+]
