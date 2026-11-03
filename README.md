@@ -63,7 +63,7 @@ chronos/
 ├── docker-compose.yml   # sobe o n8n com fuso, volume persistente e variáveis do .env
 ├── .env.example         # modelo de configuração (copie para .env — nunca versione o .env)
 ├── workflows/           # os 9 workflows do n8n em JSON portável (placeholders no lugar de ids)
-├── scripts/             # setup.mjs (instala) e sanitizar-workflows.mjs (limpa exports)
+├── scripts/             # setup.mjs (instala) e sanitizar-workflows.mjs (limpa exports); veja scripts/README.md
 ├── tests/               # testes offline dos nós Code (fluxo-1b, fluxo-4) e avaliação do prompt
 └── docs/                # documentação (Diátaxis)
 ```

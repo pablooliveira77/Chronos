@@ -42,7 +42,7 @@ No editor do n8n: `⋯` › **Import from File**. Você mesmo precisa trocar os 
 2. Exporte (dentro do container) e copie para `workflows/`:
 
    ```bash
-   docker compose exec n8n n8n export:workflow --id=<id> > /tmp/wf.json
+   docker compose exec n8n n8n export:workflow --id=<id> --output=/tmp/wf.json
    docker compose cp n8n:/tmp/wf.json workflows/<arquivo>.json
    ```
 
